@@ -1,0 +1,217 @@
+/* ── Fonts ─────────────────────────────────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --radar-ink: #03141d;
+  --radar-paper: #f0f4f7;
+  --radar-accent: #64ffda;
+  --radar-sand: #d4e157;
+}
+
+/* ── Base ──────────────────────────────────────────────────────────── */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.font-display {
+  font-family: 'Space Grotesk', 'Inter', sans-serif;
+}
+
+/* ── Aurora background ─────────────────────────────────────────────── */
+.radar-aurora {
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 60% 50% at 20% 30%, rgba(100, 255, 218, 0.12) 0%, transparent 70%),
+    radial-gradient(ellipse 50% 50% at 80% 70%, rgba(212, 225, 87, 0.10) 0%, transparent 70%);
+  z-index: 0;
+}
+
+/* ── Ticker strip ──────────────────────────────────────────────────── */
+.ticker-shell {
+  overflow: hidden;
+  padding: 0.65rem 0;
+}
+
+.ticker-track {
+  display: flex;
+  gap: 3rem;
+  white-space: nowrap;
+  animation: ticker-scroll 30s linear infinite;
+}
+
+.ticker-item {
+  font-size: 0.75rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: rgba(240, 244, 247, 0.6);
+}
+
+@keyframes ticker-scroll {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+/* ── Chips ─────────────────────────────────────────────────────────── */
+.chip {
+  display: inline-block;
+  padding: 0.3rem 0.9rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  border-radius: 9999px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(240, 244, 247, 0.85);
+}
+
+/* ── Buttons ───────────────────────────────────────────────────────── */
+.btn-primary {
+  display: inline-block;
+  padding: 0.6rem 1.6rem;
+  font-weight: 600;
+  border-radius: 0.75rem;
+  background-color: #2563eb;
+  color: #fff;
+  transition: background-color 0.2s, transform 0.15s;
+}
+.btn-primary:hover {
+  background-color: #1d4ed8;
+  transform: translateY(-1px);
+}
+
+.btn-secondary {
+  display: inline-block;
+  padding: 0.6rem 1.6rem;
+  font-weight: 600;
+  border-radius: 0.75rem;
+  border: 2px solid #2563eb;
+  color: #2563eb;
+  transition: background-color 0.2s, color 0.2s;
+}
+.btn-secondary:hover {
+  background-color: #2563eb;
+  color: #fff;
+}
+
+.btn-hero-primary {
+  display: inline-block;
+  padding: 0.75rem 2rem;
+  font-weight: 600;
+  font-size: 1.05rem;
+  border-radius: 0.75rem;
+  background: linear-gradient(135deg, #64ffda, #d4e157);
+  color: var(--radar-ink);
+  transition: transform 0.15s, box-shadow 0.2s;
+}
+.btn-hero-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(100, 255, 218, 0.3);
+}
+
+.btn-hero-secondary {
+  display: inline-block;
+  padding: 0.75rem 2rem;
+  font-weight: 600;
+  font-size: 1.05rem;
+  border-radius: 0.75rem;
+  border: 2px solid rgba(255, 255, 255, 0.25);
+  color: var(--radar-paper);
+  transition: background-color 0.2s, border-color 0.2s;
+}
+.btn-hero-secondary:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.45);
+}
+
+/* ── Dashboard teaser card ─────────────────────────────────────────── */
+.dashboard-teaser {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 1.25rem;
+  background: rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(12px);
+  padding: 2rem;
+}
+
+.teaser-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+
+.teaser-badge {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  padding: 0.25rem 0.75rem;
+  border-radius: 9999px;
+  background: rgba(100, 255, 218, 0.15);
+  color: var(--radar-accent);
+}
+
+.teaser-chart {
+  height: 170px;
+  margin-bottom: 0.5rem;
+}
+
+.teaser-pill {
+  text-align: center;
+  padding: 0.4rem 0.5rem;
+  border-radius: 0.75rem;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: rgba(240, 244, 247, 0.8);
+}
+
+/* ── Feature tiles ─────────────────────────────────────────────────── */
+.feature-tile {
+  padding: 1.75rem;
+  border-radius: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(8px);
+  transition: transform 0.2s, border-color 0.2s;
+}
+.feature-tile:hover {
+  transform: translateY(-3px);
+  border-color: rgba(100, 255, 218, 0.3);
+}
+
+.feature-kicker {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--radar-accent);
+  margin-bottom: 0.65rem;
+}
+
+/* ── CTA Panel ─────────────────────────────────────────────────────── */
+.cta-panel {
+  background: linear-gradient(135deg, var(--radar-accent), var(--radar-sand));
+  border-radius: 1.5rem;
+  padding: 3rem 2.5rem;
+  text-align: center;
+}
+
+/* ── Utility: radar colors ─────────────────────────────────────────── */
+.bg-radar-ink   { background-color: var(--radar-ink); }
+.text-radar-paper { color: var(--radar-paper); }
+.text-radar-accent { color: var(--radar-accent); }
+.text-radar-sand { color: var(--radar-sand); }
+.text-radar-ink { color: var(--radar-ink); }
