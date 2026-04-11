@@ -1,212 +1,326 @@
-# Personalized Liquidity Radar 🎯
+# Prism — Personalized Liquidity Radar
 
-An AI-powered financial forecasting tool for the NatWest Code for Purpose Hackathon that predicts your bank balance for the next 1-6 weeks with intelligent scenario forecasting.
+AI-powered financial forecasting tool that predicts your bank balance for the next 6 weeks with intelligent "what-if" scenario analysis.
 
-## 🚀 Features
+Built for the **NatWest Code for Purpose Hackathon**.
 
-- **6-Week Liquidity Forecast**: AI-powered predictions using Prophet with confidence intervals
-- **Scenario Forecasting**: "What if" analysis to explore outcomes of financial decisions
-- **Multilingual Support**: English, Hinglish, and Hindi explanations powered by GPT-4o-mini
-- **Real-time Alerts**: Early warnings about overdraft risks and bill clusters
-- **NatWest Integration**: Secure bank data access via NatWest Blue Bank API (sandbox)
-- **Interactive Visualizations**: Beautiful charts with Recharts and animations with Framer Motion
+---
 
-## 📋 Tech Stack
+## Features
 
-### Frontend
-- **React 18** - UI framework
-- **Vite** - Build tool
-- **Tailwind CSS** - Styling
-- **Recharts** - Data visualization
-- **Framer Motion** - Animations
-- **Supabase JS** - Authentication & DB client
+- **6-Week Balance Forecast** — Prophet time-series model with confidence intervals
+- **What-If Scenario Analysis** — "What happens if I spend £500 on a flight this week?"
+- **Multilingual Explanations** — English, Hinglish, and Hindi via GPT-4o-mini
+- **Early Warning Alerts** — Overdraft risk and tight-cash-buffer notifications
+- **Zero External Config** — Runs fully offline with SQLite and template fallbacks
+- **Demo Mode** — One-click access with pre-seeded realistic transaction data
 
-### Backend
-- **Python FastAPI** - API framework
-- **SQLAlchemy** - ORM
-- **Prophet** - Time series forecasting
-- **OpenAI** - AI explanations
-- **Supabase** - Auth & PostgreSQL database
-- **NatWest API** - Bank data (sandbox)
+---
 
-## 🏗️ Project Structure
+## Architecture
 
 ```
-WALLETGO/
-├── frontend/                 # React frontend application
-│   ├── src/
-│   │   ├── pages/           # Page components
-│   │   ├── components/      # Reusable components
-│   │   ├── hooks/           # Custom React hooks
-│   │   ├── context/         # Context providers
-│   │   ├── utils/           # Utility functions
-│   │   ├── App.jsx
-│   │   └── main.jsx
-│   ├── public/
-│   ├── package.json
-│   ├── vite.config.js
-│   └── tailwind.config.js
-│
-├── backend/                  # Python FastAPI backend
-│   ├── app/
-│   │   ├── models/          # Database models
-│   │   ├── routes/          # API endpoints
-│   │   ├── services/        # Business logic
-│   │   ├── utils/           # Utilities
-│   │   ├── __init__.py
-│   │   └── main.py
-│   ├── requirements.txt
-│   └── .env
-│
-├── configs/                  # Configuration files
-├── .env.example
-└── README.md
+Browser (React/Vite)  :3000
+         │
+         ▼  REST  /api/*
+ ┌───────────────────┐
+ │   API Gateway     │  :8080
+ │   src/backend/    │  JWT auth, CORS, retry logic
+ └──┬────────┬───────┘
+    │        │        │
+    ▼        ▼        ▼
+:8003     :8001     :8002
+Data      Forecast   AI
+Service   Service    Service
+SQLite    Prophet    GPT-4o-mini
+                     (template fallback)
 ```
 
-## 🚦 Getting Started
+| Service | Port | Responsibility |
+|---|---|---|
+| API Gateway | 8080 | Auth, routing, orchestration |
+| Data Service | 8003 | SQLite persistence, bcrypt auth, JWT issuance |
+| Forecast Service | 8001 | Prophet time-series forecasting |
+| AI Service | 8002 | NL explanations (OpenAI / template fallback) |
+| Frontend | 3000 | React + Vite + Tailwind |
+
+---
+
+## Project Structure
+
+```
+Prism/
+├── scripts/
+│   └── start.sh                 # One-command startup (Mac/Linux)
+├── src/
+│   ├── backend/                 # API Gateway  :8080
+│   │   ├── main.py
+│   │   ├── deps.py              # JWT verify_token dependency
+│   │   ├── client.py            # httpx client + retry logic
+│   │   ├── routes/
+│   │   │   ├── auth.py
+│   │   │   ├── forecast.py
+│   │   │   ├── scenarios.py
+│   │   │   └── transactions.py
+│   │   └── requirements.txt
+│   ├── data-service/            # SQLite persistence  :8003
+│   │   ├── main.py
+│   │   ├── models/db.py
+│   │   ├── schemas/requests.py
+│   │   ├── services/
+│   │   │   ├── auth_service.py
+│   │   │   └── transaction_service.py
+│   │   ├── routes/
+│   │   │   ├── auth.py
+│   │   │   └── transactions.py
+│   │   └── requirements.txt
+│   ├── forecast-service/        # Prophet forecasting  :8001
+│   │   ├── main.py
+│   │   ├── schemas/requests.py
+│   │   ├── services/forecast_service.py
+│   │   ├── routes/forecast.py
+│   │   └── requirements.txt
+│   ├── ai-service/              # LLM explanations  :8002
+│   │   ├── main.py
+│   │   ├── schemas/requests.py
+│   │   ├── services/ai_service.py
+│   │   ├── routes/ai.py
+│   │   └── requirements.txt
+│   └── frontend/                # React + Vite  :3000
+│       ├── src/
+│       │   ├── pages/
+│       │   ├── components/
+│       │   ├── context/
+│       │   └── utils/
+│       ├── package.json
+│       └── vite.config.js
+├── tests/
+├── docs/architecture.md
+├── requirements.txt             # Unified Python deps
+└── .env.example
+```
+
+---
+
+## Quick Start
 
 ### Prerequisites
-- Node.js 18+
-- Python 3.10+
-- PostgreSQL (via Supabase or local)
 
-### Frontend Setup
+| Tool | Version | Mac install | Windows install |
+|---|---|---|---|
+| Python | 3.10+ | `brew install python` | [python.org](https://www.python.org/downloads/) |
+| Node.js | 18+ | `brew install node` | [nodejs.org](https://nodejs.org/) |
+| Git | any | `brew install git` | [git-scm.com](https://git-scm.com/) |
+
+---
+
+### Mac / Linux
 
 ```bash
-cd frontend
+# 1. Clone
+git clone <repo-url>
+cd Prism
+
+# 2. Copy environment file
+cp .env.example .env
+# Optionally add your OPENAI_API_KEY in .env (the app works without it)
+
+# 3. Run everything with one command
+chmod +x scripts/start.sh
+./scripts/start.sh
+```
+
+The script will:
+- Install all Python and Node dependencies automatically
+- Start each service in the correct order, polling `/health` before proceeding
+- Print URLs when everything is ready
+
+---
+
+### Windows
+
+> **Tip:** Use **PowerShell** or **Git Bash** (recommended). All commands below work in both.
+
+**Option A — Git Bash (recommended, mirrors the Mac experience)**
+
+```bash
+cp .env.example .env
+bash scripts/start.sh
+```
+
+**Option B — PowerShell (manual steps)**
+
+```powershell
+# 1. Copy environment file
+Copy-Item .env.example .env
+
+# 2. Install Python dependencies
+pip install -r requirements.txt
+
+# 3. Install frontend dependencies
+cd src\frontend
+npm install
+cd ..\..
+
+# 4. Open 5 separate PowerShell terminals and run one command in each:
+
+# Terminal 1 — Data Service
+uvicorn main:app --host 0.0.0.0 --port 8003 --app-dir src/data-service
+
+# Terminal 2 — Forecast Service
+uvicorn main:app --host 0.0.0.0 --port 8001 --app-dir src/forecast-service
+
+# Terminal 3 — AI Service
+uvicorn main:app --host 0.0.0.0 --port 8002 --app-dir src/ai-service
+
+# Terminal 4 — API Gateway
+uvicorn main:app --host 0.0.0.0 --port 8080 --app-dir src/backend
+
+# Terminal 5 — Frontend
+cd src\frontend
+npm run dev
+```
+
+> **Note for Windows users:** If `uvicorn` is not found, use `python -m uvicorn ...` instead.
+
+---
+
+### Access the app
+
+| URL | Description |
+|---|---|
+| http://localhost:3000 | Frontend (main app) |
+| http://localhost:8080/docs | Gateway API docs (Swagger) |
+| http://localhost:8080/api/health/services | Check all services are healthy |
+
+---
+
+## Environment Variables
+
+Copy `.env.example` to `.env`. The app runs fully offline without any variables set.
+
+```env
+# ── Optional: enables real GPT-4o-mini explanations ──────────────────
+# Without this, the app falls back to template-based responses (still works)
+OPENAI_API_KEY=
+
+# ── JWT signing secret (change this before any real deployment) ───────
+JWT_SECRET=prism-hackathon-demo-secret-2024
+
+# ── Internal service URLs (change only if you modify the ports) ───────
+FORECAST_SERVICE_URL=http://localhost:8001
+AI_SERVICE_URL=http://localhost:8002
+DATA_SERVICE_URL=http://localhost:8003
+
+# ── Database path (SQLite file location) ─────────────────────────────
+DATABASE_PATH=prism.db
+```
+
+---
+
+## Demo Mode
+
+No account needed. Click **"Try Demo Account"** on the sign-in page.
+
+The demo user is pre-loaded with 18 realistic transactions (rent, salary, subscriptions, groceries, dining, transport) and generates a full 6-week forecast instantly.
+
+**Demo credentials** (if signing in manually):
+```
+Email:    demo@radar.com
+Password: demo123
+Token:    demo-token  (use directly in API calls via Authorization: Bearer demo-token)
+```
+
+---
+
+## Running Tests
+
+```bash
+# Mac / Linux
+python -m pytest tests/ -v
+
+# Windows (PowerShell)
+python -m pytest tests/ -v
+```
+
+Tests are smoke tests that verify each service's core logic works in isolation without running the servers.
+
+---
+
+## Troubleshooting
+
+### Port already in use
+
+**Mac / Linux:**
+```bash
+# Find and kill the process on a port (e.g. 8080)
+lsof -ti :8080 | xargs kill -9
+```
+
+**Windows (PowerShell):**
+```powershell
+# Find the process
+netstat -ano | findstr :8080
+# Kill it (replace <PID> with the number from the last column)
+taskkill /PID <PID> /F
+```
+
+### `uvicorn` not found
+
+```bash
+# Mac / Linux
+pip3 install uvicorn
+
+# Windows
+pip install uvicorn
+# or
+python -m uvicorn ...
+```
+
+### Prophet installation fails
+
+Prophet requires C build tools. If `pip install prophet` fails:
+
+**Mac:**
+```bash
+brew install gcc
+pip install prophet
+```
+
+**Windows:**
+1. Install [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/)
+2. Select **"Desktop development with C++"** during install
+3. Re-run `pip install prophet`
+
+> If Prophet still fails, the app falls back to a heuristic forecaster automatically — you won't lose any functionality.
+
+### Frontend not loading
+
+```bash
+# Make sure Node 18+ is installed
+node --version
+
+# Clear node_modules and reinstall
+cd src/frontend
+rm -rf node_modules   # Windows: Remove-Item -Recurse node_modules
 npm install
 npm run dev
 ```
 
-Frontend runs on `http://localhost:3000`
+---
 
-### Backend Setup
+## Tech Stack
 
-```bash
-cd backend
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload
-```
+| Layer | Technology |
+|---|---|
+| Frontend | React 18, Vite, Tailwind CSS, Recharts, Framer Motion |
+| API Gateway | Python FastAPI, httpx (async, retry logic), PyJWT |
+| Data Service | FastAPI, SQLAlchemy, SQLite, bcrypt |
+| Forecast Service | FastAPI, Facebook Prophet, pandas, numpy |
+| AI Service | FastAPI, OpenAI SDK (gpt-4o-mini), template fallback |
 
-Backend runs on `http://localhost:8000`
+---
 
-## 📱 User Flow
+## Team
 
-1. **Landing Page** - About & features overview
-2. **Demo Tab** - Interactive teaser without login
-3. **Sign In/Up** - Supabase authentication
-4. **Privacy & T&C** - Transparency & opt-out
-5. **Bank Linking** - Connect via NatWest (or demo data)
-6. **Dashboard** - Main product with 6 components:
-   - Liquidity Radar Gauge
-   - Forecast Timeline Graph
-   - What-If Sandbox
-   - Early Warning Alerts
-   - Baseline Comparison
-   - Confidence Badge
-
-## 🔑 Key Components
-
-### Dashboard Components
-
-#### 1. Liquidity Radar Gauge
-Circular speedometer (0-100) showing financial health
-- Green (80-100): "Smooth sailing"
-- Yellow (50-79): "Caution!"
-- Red (0-49): "Action needed"
-
-#### 2. Forecast Timeline
-6-week line chart with confidence bands and transaction icons
-
-#### 3. What-If Sandbox
-Ask in English/Hinglish/Hindi, see three scenario outcomes (Low/Likely/High)
-
-#### 4. Early Warnings
-Proactive alerts about overdraft risks and bill clusters
-
-#### 5. Baseline Comparison
-Toggle to show simple naive forecast vs. AI forecast
-
-#### 6. Confidence Badge
-Transparency about prediction certainty
-
-## 🔐 Authentication
-
-- **Supabase** for auth and PostgreSQL database
-- **JWT tokens** for API security
-- **Demo account** for quick testing: `demo@radar.com` / `demo123`
-
-## 📊 Forecasting Logic
-
-1. **Data Input**: Get last 3 months of transactions + recurring bills
-2. **Feature Engineering**: Extract patterns, seasonality, recurring items
-3. **Prophet Model**: Baseline forecast with confidence intervals
-4. **Scenario Runtime**: Inject user's "what if" into model
-5. **Explanation Gen**: Use GPT-4o-mini to explain in user's language
-
-## 🏦 NatWest Integration
-
-Using NatWest Blue Bank API (sandbox mode):
-- Read-only transaction access
-- No data stored permanently
-- Opt-out anytime
-- HTTPS + OAuth2 for security
-
-## 📌 Environment Variables
-
-See `.env.example` for complete setup. Key variables:
-
-```env
-VITE_SUPABASE_URL=<your-supabase-url>
-VITE_SUPABASE_ANON_KEY=<anon-key>
-OPENAI_API_KEY=<your-api-key>
-NATWEST_API_KEY=<sandbox-key>
-```
-
-## 📈 Demo Data
-
-Test account comes pre-loaded with 3 months of realistic synthetic transactions including:
-- Monthly salary deposits
-- Rent, utilities, subscriptions
-- Grocery, dining, transport expenses
-- Special spending events
-
-## 🎯 Hackathon Focus
-
-**Why we win:**
-1. **Scenario Forecasting** - Users see outcomes before making decisions
-2. **Multilingual Support** - Inclusive for diverse UK/India audience
-3. **Real NatWest Integration** - Impressive tech depth
-4. **Early Warnings** - Proactive, not reactive
-5. **Beautiful UX** - Modern, engaging, delightful
-
-## 🛠️ Development
-
-### Running Tests
-
-```bash
-# Backend (when tests are added)
-cd backend
-pytest
-```
-
-### Building for Production
-
-```bash
-# Frontend
-cd frontend
-npm run build
-
-# Backend
-# Configure ENVIRONMENT=production in .env
-```
-
-## 📝 License
-
-Built for NatWest Code for Purpose Hackathon 2024
-
-## 👥 Team
-
-Your team details here
+Built for NatWest Code for Purpose Hackathon 2024.
