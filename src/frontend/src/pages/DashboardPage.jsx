@@ -1,10 +1,32 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart } from 'recharts'
-import { FiChevronLeft, FiChevronRight, FiGrid, FiAlertTriangle, FiTarget, FiActivity, FiLogOut, FiMenu } from 'react-icons/fi'
-import { useAuth } from '../context/AuthContext'
-import { useNavigate } from 'react-router-dom'
+import {
+  Area,
+  AreaChart,
+  CartesianGrid,
+  Line,
+  ReferenceDot,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts'
+import {
+  FiActivity,
+  FiAlertTriangle,
+  FiChevronLeft,
+  FiChevronRight,
+  FiGrid,
+  FiLogOut,
+  FiMenu,
+  FiSettings,
+  FiTarget,
+  FiTrendingUp,
+  FiShield,
+} from 'react-icons/fi'
 import toast from 'react-hot-toast'
+import { useAuth } from '../context/AuthContext'
 import { forecastAPI, scenarioAPI } from '../utils/api'
 
 const DEFAULT_FORECAST = [
@@ -16,6 +38,22 @@ const DEFAULT_FORECAST = [
   { date: '5 Jun', rawDate: '2024-06-05', balance: 4500, low: 4000, high: 5100, baseline: 3180 },
   { date: '12 Jun', rawDate: '2024-06-12', balance: 4100, low: 3600, high: 4700, baseline: 3100 },
 ]
+
+const LANGUAGE_TEXTS = {
+  en: { placeholder: 'What happens if I...', examples: ['$500 flight', 'Skip coffee 2 weeks', 'Payday 3 days late'] },
+  hi: { placeholder: 'यदि मैं...', examples: ['$500 फ्लाइट', '2 सप्ताह कॉफी छोड़ें', '3 दिन देर से तनख्वाह'] },
+  hinglish: { placeholder: 'Agar main...', examples: ['$500 ka flight book karoo', '2 hafte coffee skip karoo', 'Salary 3 din late ho'] },
+}
+
+const MENU_ITEMS = [
+  { id: 'overview', path: '/dashboard', icon: FiGrid, label: 'Overview' },
+  { id: 'forecast', path: '/dashboard/forecast', icon: FiActivity, label: 'Forecast' },
+  { id: 'sandbox', path: '/dashboard/sandbox', icon: FiTarget, label: 'What-If Sandbox' },
+  { id: 'alerts', path: '/dashboard/alerts', icon: FiAlertTriangle, label: 'Alerts' },
+]
+
+const SETTINGS_ITEM = { id: 'settings', path: '/dashboard/settings', icon: FiSettings, label: 'Settings' }
+const PERSONAS = ['professional', 'freelancer', 'student']
 
 function formatDateLabel(rawDate) {
   const parsed = new Date(rawDate)
@@ -54,9 +92,142 @@ function normalizeForecastRows(rows) {
 }
 
 function computeLiquidityScore(minBalance) {
-  if (minBalance >= 2500) return { score: 88, label: 'Smooth sailing for 6 weeks' }
-  if (minBalance >= 1000) return { score: 68, label: 'Caution: Tight spot ahead' }
-  return { score: 38, label: 'Action needed this week' }
+  if (minBalance >= 2500) return { score: 88, label: 'Smooth sailing for 6 weeks', tone: 'text-emerald-700' }
+  if (minBalance >= 1000) return { score: 68, label: 'Caution: Tight spot ahead', tone: 'text-amber-700' }
+  return { score: 38, label: 'Action needed this week', tone: 'text-red-700' }
+}
+
+function getCurrentTab(pathname) {
+  if (pathname === '/dashboard' || pathname === '/dashboard/') return 'overview'
+  if (pathname.startsWith('/dashboard/forecast')) return 'forecast'
+  if (pathname.startsWith('/dashboard/sandbox')) return 'sandbox'
+  if (pathname.startsWith('/dashboard/alerts')) return 'alerts'
+  if (pathname.startsWith('/dashboard/settings')) return 'settings'
+  return 'overview'
+}
+
+function formatMoney(value, currencyCode = 'USD') {
+  const symbols = { USD: '$', GBP: 'GBP ', EUR: 'EUR ' }
+  const symbol = symbols[currencyCode] || '$'
+  return `${symbol}${Math.round(value).toLocaleString()}`
+}
+
+function getTimelineEvent(dateLabel) {
+  const day = Number.parseInt((dateLabel || '').split(' ')[0], 10)
+  if (day === 5) return { emoji: '💰', label: 'Payday' }
+  if (day === 1) return { emoji: '📅', label: 'Rent' }
+  if (day === 10) return { emoji: '🎬', label: 'Subscription' }
+  return null
+}
+
+function ForecastTooltip({ active, payload, label, currency }) {
+  if (!active || !payload || !payload.length) return null
+  const row = payload[0]?.payload || {}
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white/95 px-3 py-2 shadow-md text-sm">
+      <p className="font-semibold text-slate-900">{label}</p>
+      <p className="text-slate-700">Balance: {formatMoney(row.balance, currency)}</p>
+      <p className="text-emerald-700">Inflows: +{formatMoney(row.inflows || 0, currency)}</p>
+      <p className="text-rose-700">Outflows: -{formatMoney(row.outflows || 0, currency)}</p>
+    </div>
+  )
+}
+
+function LiquidityGauge({ score, label, isDark, minBalanceText }) {
+  const clamped = Math.max(0, Math.min(100, score))
+  const angleRad = Math.PI * (1 - clamped / 100)
+  const centerX = 120
+  const centerY = 110
+  const needleRadius = 52
+  const needleX = centerX + needleRadius * Math.cos(angleRad)
+  const needleY = centerY - needleRadius * Math.sin(angleRad)
+  const tone = clamped >= 80 ? 'text-emerald-300' : clamped >= 50 ? 'text-amber-300' : 'text-red-300'
+  const needleColor = isDark ? '#f8fafc' : '#0f172a'
+  const progress = clamped / 100
+
+  return (
+    <div className="w-full max-w-[18.5rem] mx-auto px-2 pt-2 pb-1 overflow-hidden">
+      <svg viewBox="0 0 240 150" className="w-full h-[11.5rem] relative z-10">
+        <defs>
+          <linearGradient id="gaugeArcGradient" x1="20" y1="110" x2="220" y2="110" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stopColor="#22c55e" />
+            <stop offset="52%" stopColor="#eab308" />
+            <stop offset="100%" stopColor="#ef4444" />
+          </linearGradient>
+          <filter id="needleGlow" x="-50%" y="-50%" width="200%" height="200%">
+            <feDropShadow dx="0" dy="0" stdDeviation="3" floodColor="#38bdf8" floodOpacity="0.55" />
+          </filter>
+        </defs>
+
+        <path d="M20 110 A100 100 0 0 1 220 110" fill="none" stroke="rgba(148,163,184,0.26)" strokeWidth="10" strokeLinecap="round" />
+        <motion.path
+          d="M20 110 A100 100 0 0 1 220 110"
+          fill="none"
+          stroke="url(#gaugeArcGradient)"
+          strokeWidth="10"
+          strokeLinecap="round"
+          pathLength="100"
+          strokeDasharray="100"
+          initial={{ strokeDashoffset: 100 }}
+          animate={{ strokeDashoffset: 100 - progress * 100 }}
+          transition={{ type: 'spring', stiffness: 60, damping: 20 }}
+        />
+
+        <motion.line
+          x1={centerX}
+          y1={centerY}
+          initial={{ x2: centerX - needleRadius, y2: centerY }}
+          animate={{ x2: needleX, y2: needleY }}
+          transition={{ type: 'spring', stiffness: 60, damping: 14 }}
+          stroke={needleColor}
+          strokeWidth="4"
+          strokeLinecap="round"
+          filter="url(#needleGlow)"
+        />
+        <circle cx={centerX} cy={centerY} r="7" fill={needleColor} />
+      </svg>
+      <div className="text-center -mt-2 px-1">
+        <p className={`text-6xl leading-none font-semibold tracking-tight drop-shadow-sm ${tone}`}>{clamped}</p>
+        <p className={`inline-block mt-1 px-3 py-1 rounded-full text-sm font-medium ${isDark ? 'bg-white/10 text-slate-200' : 'bg-slate-900/5 text-slate-700'}`}>
+          {label}
+        </p>
+        <motion.p
+          className={`text-base font-medium mt-2 whitespace-nowrap ${isDark ? 'text-slate-200/95' : 'text-slate-700'}`}
+          animate={{ opacity: [0.75, 1, 0.75], scale: [1, 1.02, 1] }}
+          transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
+        >
+          Minimum 30-day balance: {minBalanceText}
+        </motion.p>
+      </div>
+    </div>
+  )
+}
+
+function MetricCard({ title, value, note, tone }) {
+  return (
+    <div className="glass-card p-5 hover:shadow-[0_14px_34px_rgba(15,23,42,0.14)] transition-shadow">
+      <p className="text-xs uppercase tracking-[0.12em] text-slate-500 mb-2">{title}</p>
+      <p className={`text-4xl font-bold ${tone || 'text-slate-900'}`}>{value}</p>
+      <p className="text-sm text-gray-600 mt-2">{note}</p>
+    </div>
+  )
+}
+
+function MenuButton({ item, isMenuCollapsed, onClick }) {
+  return (
+    <NavLink
+      to={item.path}
+      onClick={onClick}
+      className={({ isActive }) =>
+        `menu-button w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left transition ${isActive ? 'menu-button-active' : ''}`
+      }
+      end={item.path === '/dashboard'}
+    >
+      <item.icon size={18} />
+      {!isMenuCollapsed && <span>{item.label}</span>}
+    </NavLink>
+  )
 }
 
 export default function DashboardPage() {
@@ -74,24 +245,32 @@ export default function DashboardPage() {
   const [minBalance, setMinBalance] = useState(2120)
   const [minBalanceDate, setMinBalanceDate] = useState('May 8')
   const [scenarioNote, setScenarioNote] = useState('Try a scenario to overlay low/likely/high dotted lines on the graph.')
-  const { signOut } = useAuth()
+  const [currency, setCurrency] = useState('USD')
+  const [alertBuffer, setAlertBuffer] = useState(500)
+  const [theme, setTheme] = useState(() => localStorage.getItem('radar_theme') || 'dark')
+  const [persona, setPersona] = useState('professional')
+
+  const { signOut, user } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
 
-  const texts = {
-    en: { placeholder: "What happens if I...", examples: ["$500 flight", "Skip coffee 2 weeks", "Payday 3 days late"] },
-    hi: { placeholder: "यदि मैं...", examples: ["$500 फ्लाइट", "2 सप्ताह कॉफी छोड़ें", "3 दिन देर से तनख्वाह"] },
-    hinglish: { placeholder: "Agar main...", examples: ["$500 ka flight book karoo", "2 hafte coffee skip karoo", "Salary 3 din late ho"] },
-  }
-
-  const menuItems = [
-    { id: 'overview', icon: FiGrid, label: 'Overview' },
-    { id: 'forecast', icon: FiActivity, label: 'Forecast' },
-    { id: 'sandbox', icon: FiTarget, label: 'What-If Sandbox' },
-    { id: 'alerts', icon: FiAlertTriangle, label: 'Alerts' },
-  ]
-
+  const currentTab = getCurrentTab(location.pathname)
   const liquidity = useMemo(() => computeLiquidityScore(minBalance), [minBalance])
   const hasFetchedForecast = useRef(false)
+  const isDark = theme === 'dark'
+  const greenZoneStreak = useMemo(() => {
+    let streak = 0
+    for (let i = forecastRows.length - 1; i >= 0; i -= 1) {
+      if (forecastRows[i].balance >= alertBuffer) streak += 1
+      else break
+    }
+    return Math.max(1, streak)
+  }, [forecastRows, alertBuffer])
+
+  useEffect(() => {
+    localStorage.setItem('radar_theme', theme)
+    document.documentElement.setAttribute('data-theme', theme)
+  }, [theme])
 
   useEffect(() => {
     if (hasFetchedForecast.current) return
@@ -105,7 +284,12 @@ export default function DashboardPage() {
         const normalizedRows = normalizeForecastRows(payload.forecast_data)
         setForecastRows(normalizedRows)
         setConfidence(toNumber(payload.confidence, 72))
-        setMinBalance(toNumber(payload.min_balance, normalizedRows.reduce((m, r) => Math.min(m, r.balance), normalizedRows[0].balance)))
+        setMinBalance(
+          toNumber(
+            payload.min_balance,
+            normalizedRows.reduce((m, r) => Math.min(m, r.balance), normalizedRows[0].balance)
+          )
+        )
         setMinBalanceDate(formatDateLabel(payload.min_balance_date || normalizedRows[0].rawDate))
       } catch (error) {
         toast.error('Could not load live forecast, showing demo data')
@@ -136,6 +320,9 @@ export default function DashboardPage() {
         scenarioLow: lowByDate ?? lowByIndex ?? row.balance,
         scenarioLikely: likelyByDate ?? likelyByIndex ?? row.balance,
         scenarioHigh: highByDate ?? highByIndex ?? row.balance,
+        inflows: Math.max(0, row.balance - toNumber(forecastRows[idx - 1]?.balance, row.balance)),
+        outflows: Math.max(0, toNumber(forecastRows[idx - 1]?.balance, row.balance) - row.balance),
+        marker: getTimelineEvent(row.date),
       }
     })
   }, [forecastRows, scenarioRows])
@@ -176,54 +363,362 @@ export default function DashboardPage() {
     }
   }
 
-  const jumpTo = (id) => {
-    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    setMobileMenuOpen(false)
+  const startVoiceInput = () => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
+    if (!SpeechRecognition) {
+      toast.error('Voice input is not supported in this browser')
+      return
+    }
+
+    const recognition = new SpeechRecognition()
+    recognition.lang = language === 'hi' ? 'hi-IN' : 'en-IN'
+    recognition.interimResults = false
+    recognition.maxAlternatives = 1
+    recognition.onresult = (event) => {
+      const transcript = event.results?.[0]?.[0]?.transcript || ''
+      if (transcript) setScenarioInput(transcript)
+    }
+    recognition.onerror = () => toast.error('Could not capture voice input')
+    recognition.start()
   }
 
-  const handleMoveBill = () => {
-    const preset = 'Payday 3 days late'
-    setScenarioInput(preset)
-    evaluateScenario(preset)
-    toast.success('Applied suggested scenario')
-    jumpTo('sandbox')
+  const renderOverview = () => (
+    <div className="space-y-6">
+      <div className="grid lg:grid-cols-3 gap-5">
+        <MetricCard
+          title="Liquidity Score"
+          value={liquidity.score}
+          note={liquidity.label}
+          tone={liquidity.tone}
+        />
+        <MetricCard
+          title="Minimum 30-Day Balance"
+          value={formatMoney(minBalance, currency)}
+          note={`Expected on ${minBalanceDate}`}
+          tone="text-amber-700"
+        />
+        <MetricCard
+          title="Model Confidence"
+          value={`${Math.round(confidence)}%`}
+          note="Adjusted for unusual spending last month"
+          tone="text-blue-700"
+        />
+      </div>
+
+      <div className="grid xl:grid-cols-3 gap-6">
+        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="glass-card xl:col-span-2 p-6">
+          <div className="flex items-center justify-between mb-5">
+            <h2 className="text-xl font-bold text-slate-900">Liquidity Radar Gauge</h2>
+            <span className="text-xs uppercase tracking-[0.16em] text-slate-500">0-100 score</span>
+          </div>
+          <div className="grid md:grid-cols-2 gap-6 items-center">
+            <div className="p-1">
+              <LiquidityGauge
+                score={liquidity.score}
+                label={liquidity.label}
+                isDark={isDark}
+                minBalanceText={formatMoney(minBalance, currency)}
+              />
+            </div>
+
+            <div className="space-y-3">
+              <div className="soft-panel px-4 py-3">
+                <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Current Status</p>
+                <p className="text-lg font-semibold text-slate-900">Stable with mild volatility</p>
+              </div>
+              <div className="soft-panel px-4 py-3">
+                <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Closest Risk Window</p>
+                <p className="text-lg font-semibold text-slate-900">{minBalanceDate}</p>
+              </div>
+              <div className="soft-panel px-4 py-3">
+                <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Confidence</p>
+                <p className="text-lg font-semibold text-slate-900">{Math.round(confidence)}% model confidence</p>
+              </div>
+            </div>
+          </div>
+        </motion.div>
+
+        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="health-card rounded-2xl p-6 text-slate-900 border border-amber-200 bg-gradient-to-br from-amber-50 via-orange-50 to-rose-50 shadow-[0_14px_30px_rgba(0,0,0,0.08)]">
+          <p className="text-sm uppercase tracking-[0.14em] text-sky-700 mb-4">Current Health</p>
+          <div className="space-y-4">
+            <div className="flex items-center gap-3">
+              <FiTrendingUp className="text-sky-600" />
+              <p className="text-sm">Trend: stable with payday uplift in week 2</p>
+            </div>
+            <div className="flex items-center gap-3">
+              <FiShield className="text-teal-600" />
+              <p className="text-sm">Buffer above threshold for most days</p>
+            </div>
+            <div className="rounded-xl bg-white border border-amber-200 px-4 py-3 health-next-step">
+              <p className="text-xs uppercase tracking-[0.12em] text-amber-700">Suggested Next Step</p>
+              <p className="mt-1 font-semibold">Run a what-if for one high-value purchase</p>
+            </div>
+          </div>
+        </motion.div>
+      </div>
+    </div>
+  )
+
+  const renderForecast = () => (
+    <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+      <div className="glass-card p-6">
+        <div className="flex justify-between items-center mb-6">
+          <div className="flex items-center gap-3">
+            <h2 className="text-2xl font-bold text-slate-900">Forecast Timeline</h2>
+            <span
+              title="Lower confidence due to unusual spending last month"
+              className="rounded-full px-3 py-1 text-xs font-semibold bg-sky-100 text-sky-800 border border-sky-200"
+            >
+              {Math.round(confidence)}% confidence
+            </span>
+          </div>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={showBaseline}
+              onChange={(e) => setShowBaseline(e.target.checked)}
+              className="w-4 h-4"
+            />
+            <span className="text-sm font-medium text-gray-700">Show baseline</span>
+          </label>
+        </div>
+        <ResponsiveContainer width="100%" height={370}>
+          <AreaChart data={scenarioData}>
+            <defs>
+              <linearGradient id="colorBalance" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor="#2563eb" stopOpacity={0.3} />
+                <stop offset="95%" stopColor="#2563eb" stopOpacity={0} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" stroke={isDark ? 'rgba(148,163,184,0.22)' : '#e2e8f0'} />
+            <XAxis dataKey="date" stroke={isDark ? '#cbd5e1' : '#475569'} />
+            <YAxis stroke={isDark ? '#cbd5e1' : '#475569'} />
+            <Tooltip
+              content={<ForecastTooltip currency={currency} />}
+            />
+            <Area type="monotone" dataKey="balance" stroke="#2563eb" strokeWidth={3} fillOpacity={1} fill="url(#colorBalance)" />
+            {scenarioData.map((row) =>
+              row.marker ? (
+                <ReferenceDot
+                  key={`${row.date}-${row.marker.label}`}
+                  x={row.date}
+                  y={row.balance}
+                  r={5}
+                  fill="#0ea5e9"
+                  stroke="#ffffff"
+                  label={{ value: row.marker.emoji, position: 'top', fontSize: 14 }}
+                />
+              ) : null
+            )}
+            {isScenarioActive && (
+              <>
+                <Line type="monotone" dataKey="scenarioLow" stroke="#ef4444" strokeDasharray="5 5" strokeWidth={2} dot={false} />
+                <Line type="monotone" dataKey="scenarioLikely" stroke={isDark ? '#e2e8f0' : '#111827'} strokeDasharray="5 5" strokeWidth={2.4} dot={false} />
+                <Line type="monotone" dataKey="scenarioHigh" stroke="#16a34a" strokeDasharray="5 5" strokeWidth={2} dot={false} />
+              </>
+            )}
+            {showBaseline && (
+              <Line type="monotone" dataKey="baseline" stroke="#9ca3af" strokeDasharray="6 6" strokeWidth={2} dot={false} />
+            )}
+          </AreaChart>
+        </ResponsiveContainer>
+        {isForecastLoading && <p className="mt-4 text-sm text-gray-500">Loading live forecast...</p>}
+      </div>
+
+      <div className="grid md:grid-cols-3 gap-4 text-sm">
+        <div className="soft-panel px-4 py-3">💰 Payday: May 5</div>
+        <div className="soft-panel px-4 py-3">📅 Rent Debited: May 1</div>
+        <div className="soft-panel px-4 py-3">🎬 Subscriptions: May 10</div>
+      </div>
+    </motion.div>
+  )
+
+  const renderSandbox = () => (
+    <div className="grid xl:grid-cols-3 gap-6">
+      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="sandbox-panel glass-card xl:col-span-2 p-6">
+        <h2 className="text-xl font-bold mb-4 text-slate-900">What-If Sandbox</h2>
+        <div className="flex flex-wrap gap-2 mb-4">
+          {[
+            { code: 'en', label: '🌐 English' },
+            { code: 'hinglish', label: '🇮🇳 Hinglish' },
+            { code: 'hi', label: '🇮🇳 Hindi' },
+          ].map((lang) => (
+            <button
+              key={lang.code}
+              onClick={() => setLanguage(lang.code)}
+              className={`sandbox-chip px-3 py-1 rounded-full text-sm font-medium transition ${language === lang.code ? 'sandbox-chip-active' : ''}`}
+            >
+              {lang.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex gap-2 mb-4">
+          <input
+            type="text"
+            value={scenarioInput}
+            onChange={(e) => setScenarioInput(e.target.value)}
+            placeholder={LANGUAGE_TEXTS[language].placeholder}
+            className="sandbox-input flex-1 px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
+          />
+          <button
+            type="button"
+            onClick={startVoiceInput}
+            className="sandbox-mic-btn px-4 rounded-xl border border-slate-300 bg-white hover:bg-slate-50"
+            title="Voice input"
+          >
+            🎤
+          </button>
+        </div>
+
+        <button
+          onClick={() => evaluateScenario(scenarioInput)}
+          disabled={isScenarioRunning}
+          className="w-full md:w-auto px-6 py-2.5 primary-cta"
+        >
+          {isScenarioRunning ? 'Running...' : 'Run Scenario'}
+        </button>
+
+        <div className="mt-5 grid md:grid-cols-3 gap-3">
+          {LANGUAGE_TEXTS[language].examples.map((example) => (
+            <button
+              key={example}
+              onClick={() => {
+                setScenarioInput(example)
+                evaluateScenario(example)
+              }}
+              className="sandbox-quick-chip text-left px-3 py-3 bg-slate-100 hover:bg-slate-200 rounded-xl text-sm font-medium transition"
+            >
+              {example}
+            </button>
+          ))}
+        </div>
+
+        <p className="sandbox-note mt-5 text-sm text-gray-700">{scenarioNote}</p>
+      </motion.div>
+
+      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="guide-card rounded-2xl p-6 text-slate-900 border border-sky-200 bg-gradient-to-br from-sky-50 via-cyan-50 to-teal-50 shadow-[0_14px_30px_rgba(0,0,0,0.08)]">
+        <p className="text-xs uppercase tracking-[0.14em] text-sky-700 mb-4">Scenario Overlay Guide</p>
+        <div className="space-y-3 text-sm">
+          <p>Red dotted line: conservative downside</p>
+          <p>Dark dotted line: most likely path</p>
+          <p>Green dotted line: optimistic upside</p>
+        </div>
+        <div className="mt-6 rounded-xl bg-white border border-sky-200 p-4 text-sm">
+          Use this before large spends, travel bookings, or delayed salary periods.
+        </div>
+      </motion.div>
+    </div>
+  )
+
+  const renderAlerts = () => (
+    <div className="space-y-4 max-w-4xl">
+      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="border-l-4 border-red-500 glass-card p-5">
+        <p className="font-semibold text-red-900">Overdraft Risk Window</p>
+        <p className="text-sm text-red-800 mt-1">
+          Around {minBalanceDate}, projected balance can approach {formatMoney(minBalance, currency)} due to clustered debits.
+        </p>
+        <button className="mt-3 px-4 py-2 rounded-lg bg-red-100 text-red-700 border border-red-200 text-sm font-medium">Postpone Expense</button>
+      </motion.div>
+
+      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="border-l-4 border-amber-500 glass-card p-5">
+        <p className="font-semibold text-amber-900">Buffer Threshold Advisory</p>
+        <p className="text-sm text-amber-800 mt-1">
+          Your configured alert level is {formatMoney(alertBuffer, currency)}. Consider moving one non-essential payment by 2 to 3 days.
+        </p>
+        <button className="mt-3 px-4 py-2 rounded-lg bg-amber-100 text-amber-700 border border-amber-200 text-sm font-medium">Move Bill</button>
+      </motion.div>
+    </div>
+  )
+
+  const renderSettings = () => (
+    <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="glass-card p-6 max-w-3xl">
+      <h2 className="text-2xl font-bold mb-4 text-slate-900">Settings</h2>
+      <div className="space-y-6">
+        <div>
+          <p className="text-sm font-semibold text-gray-800 mb-2">Display Currency</p>
+          <select
+            value={currency}
+            onChange={(e) => setCurrency(e.target.value)}
+            className="w-full md:w-72 rounded-xl border border-slate-300 px-3 py-2 bg-white"
+          >
+            <option value="USD">USD ($)</option>
+            <option value="GBP">GBP (GBP)</option>
+            <option value="EUR">EUR (EUR)</option>
+          </select>
+        </div>
+
+        <div>
+          <p className="text-sm font-semibold text-gray-800 mb-2">Appearance</p>
+          <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3">
+            <div>
+              <p className="font-medium text-slate-800">Dark Mode</p>
+              <p className="text-sm text-slate-600">Switch between light and dark UI themes</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'))}
+              className={`w-14 h-8 rounded-full p-1 transition ${theme === 'dark' ? 'bg-teal-600' : 'bg-slate-300'}`}
+              aria-label="Toggle dark mode"
+            >
+              <span
+                className={`block h-6 w-6 rounded-full bg-white transition-transform ${theme === 'dark' ? 'translate-x-6' : 'translate-x-0'}`}
+              />
+            </button>
+          </div>
+        </div>
+
+        <div>
+          <p className="text-sm font-semibold text-gray-800 mb-2">Low Balance Alert Buffer</p>
+          <input
+            type="range"
+            min="200"
+            max="3000"
+            step="100"
+            value={alertBuffer}
+            onChange={(e) => setAlertBuffer(Number(e.target.value))}
+            className="w-full md:w-96 accent-range"
+          />
+          <p className="text-sm text-gray-600 mt-1">Alert me when projected balance falls below {formatMoney(alertBuffer, currency)}</p>
+        </div>
+
+        <div className="soft-panel px-4 py-3">
+          <p className="text-sm text-gray-700">
+            Signed in as: <span className="font-semibold">{user?.email || 'Unknown user'}</span>
+          </p>
+        </div>
+      </div>
+    </motion.div>
+  )
+
+  const contentByTab = {
+    overview: renderOverview(),
+    forecast: renderForecast(),
+    sandbox: renderSandbox(),
+    alerts: renderAlerts(),
+    settings: renderSettings(),
   }
 
   return (
-    <div className="min-h-screen bg-[#edf2f5] flex">
-      <aside
-        className={`hidden md:flex flex-col bg-[#071922] text-white border-r border-white/10 transition-all duration-300 ${
-          isMenuCollapsed ? 'w-20' : 'w-72'
-        }`}
-      >
+    <div className="postauth-bg relative overflow-hidden flex">
+      <div className="grain-overlay" />
+      <aside className={`dashboard-sidebar hidden md:flex flex-col bg-white/75 backdrop-blur-sm text-slate-900 border-r border-white/70 transition-all duration-300 relative z-10 ${isMenuCollapsed ? 'w-20' : 'w-72'}`}>
         <div className="h-16 px-4 flex items-center justify-between border-b border-white/10">
           {!isMenuCollapsed && <p className="font-display text-xl">Liquidity Radar</p>}
-          <button
-            onClick={() => setIsMenuCollapsed((v) => !v)}
-            className="p-2 rounded-lg bg-white/10 hover:bg-white/20"
-          >
+          <button onClick={() => setIsMenuCollapsed((v) => !v)} className="p-2 rounded-lg bg-slate-100 hover:bg-slate-200 transition">
             {isMenuCollapsed ? <FiChevronRight /> : <FiChevronLeft />}
           </button>
         </div>
 
         <div className="p-3 space-y-1">
-          {menuItems.map((item) => (
-            <button
-              key={item.id}
-              onClick={() => jumpTo(item.id)}
-              className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/10 text-left"
-            >
-              <item.icon size={18} />
-              {!isMenuCollapsed && <span>{item.label}</span>}
-            </button>
+          {MENU_ITEMS.map((item) => (
+            <MenuButton key={item.id} item={item} isMenuCollapsed={isMenuCollapsed} onClick={() => setMobileMenuOpen(false)} />
           ))}
         </div>
 
-        <div className="mt-auto p-3 border-t border-white/10">
-          <button
-            onClick={handleSignOut}
-            className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-red-500/20 text-left"
-          >
+        <div className="mt-auto p-3 border-t border-slate-200 space-y-2">
+          <MenuButton item={SETTINGS_ITEM} isMenuCollapsed={isMenuCollapsed} onClick={() => setMobileMenuOpen(false)} />
+          <button onClick={handleSignOut} className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-red-100 text-left text-red-700">
             <FiLogOut size={18} />
             {!isMenuCollapsed && <span>Sign Out</span>}
           </button>
@@ -232,24 +727,25 @@ export default function DashboardPage() {
 
       {mobileMenuOpen && (
         <div className="fixed inset-0 z-30 md:hidden bg-black/45" onClick={() => setMobileMenuOpen(false)}>
-          <div className="w-64 h-full bg-[#071922] text-white p-4" onClick={(e) => e.stopPropagation()}>
+          <div className="dashboard-sidebar w-64 h-full bg-white text-slate-900 p-4" onClick={(e) => e.stopPropagation()}>
             <p className="font-display text-xl mb-4">Liquidity Radar</p>
             <div className="space-y-1">
-              {menuItems.map((item) => (
-                <button
+              {[...MENU_ITEMS, SETTINGS_ITEM].map((item) => (
+                <NavLink
                   key={item.id}
-                  onClick={() => jumpTo(item.id)}
-                  className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/10 text-left"
+                  to={item.path}
+                  onClick={() => setMobileMenuOpen(false)}
+                  className={({ isActive }) =>
+                    `menu-button w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left block ${isActive ? 'menu-button-active' : ''}`
+                  }
+                  end={item.path === '/dashboard'}
                 >
                   <item.icon size={18} />
                   <span>{item.label}</span>
-                </button>
+                </NavLink>
               ))}
             </div>
-            <button
-              onClick={handleSignOut}
-              className="mt-5 w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-red-500/20 text-left"
-            >
+            <button onClick={handleSignOut} className="mt-5 w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-red-100 text-left text-red-700">
               <FiLogOut size={18} />
               <span>Sign Out</span>
             </button>
@@ -257,253 +753,34 @@ export default function DashboardPage() {
         </div>
       )}
 
-      <main className="flex-1 min-w-0">
-        <div className="h-16 px-4 md:px-8 bg-white border-b border-gray-200 flex items-center justify-between sticky top-0 z-20">
+      <main className="flex-1 min-w-0 relative z-10">
+        <div className="dashboard-topbar h-16 px-4 md:px-8 bg-white/70 backdrop-blur border-b border-white/70 flex items-center justify-between sticky top-0 z-20">
           <div className="flex items-center gap-3">
-            <button
-              onClick={() => setMobileMenuOpen(true)}
-              className="md:hidden p-2 rounded-lg border border-gray-200"
-            >
+            <button onClick={() => setMobileMenuOpen(true)} className="md:hidden p-2 rounded-lg border border-gray-200">
               <FiMenu />
             </button>
             <div>
-              <p className="text-xs uppercase tracking-[0.2em] text-gray-500">Dashboard</p>
-              <p className="font-semibold text-gray-900">May 2024 • Demo Account</p>
+              <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Dashboard</p>
+              <p className="font-semibold text-gray-900 capitalize">{currentTab === 'overview' ? 'Overview' : currentTab}</p>
             </div>
           </div>
-          <div className="rounded-full px-3 py-1 text-sm bg-green-100 text-green-700">Financial Weather: Sunny</div>
-        </div>
-
-        <div className="max-w-7xl mx-auto p-4 md:p-8">
-          <div id="overview" className="grid lg:grid-cols-3 gap-5 mb-8">
-            <div className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm">
-              <p className="text-sm text-gray-500 mb-2">Liquidity Score</p>
-              <p className="text-4xl font-bold text-[#0f766e]">{liquidity.score}</p>
-              <p className="text-sm text-gray-600 mt-2">{liquidity.label}</p>
-            </div>
-            <div className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm">
-              <p className="text-sm text-gray-500 mb-2">Min 30-Day Balance</p>
-              <p className="text-4xl font-bold text-[#b45309]">${Math.round(minBalance).toLocaleString()}</p>
-              <p className="text-sm text-gray-600 mt-2">Expected on {minBalanceDate}</p>
-            </div>
-            <div className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm">
-              <p className="text-sm text-gray-500 mb-2">Confidence</p>
-              <p className="text-4xl font-bold text-[#1d4ed8]">{Math.round(confidence)}%</p>
-              <p className="text-sm text-gray-600 mt-2">Lower due to unusual spending last month</p>
-            </div>
-          </div>
-
-          <div className="grid lg:grid-cols-3 gap-8">
-            <div className="lg:col-span-2 space-y-8">
-            {/* Liquidity Gauge Component */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.1 }}
-              className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6"
+          <div className="flex items-center gap-2">
+            <select
+              value={persona}
+              onChange={(e) => setPersona(e.target.value)}
+              className="rounded-full px-3 py-1 text-sm border border-slate-300 bg-white"
+              title="Demo persona"
             >
-              <h2 className="text-2xl font-bold mb-6">Liquidity Score</h2>
-              <div className="flex items-center justify-center">
-                <div className="relative w-48 h-48 mx-auto">
-                  <svg viewBox="0 0 200 120" className="w-full h-full">
-                    {/* Gauge background */}
-                    <path d="M 20 100 A 80 80 0 0 1 180 100" stroke="#e5e7eb" strokeWidth="20" fill="none" />
-                    {/* Red arc (0-33) */}
-                    <path d="M 20 100 A 80 80 0 0 1 73 28" stroke="#dc2626" strokeWidth="20" fill="none" />
-                    {/* Yellow arc (33-66) */}
-                    <path d="M 73 28 A 80 80 0 0 1 127 28" stroke="#ea580c" strokeWidth="20" fill="none" />
-                    {/* Green arc (66-100) */}
-                    <path d="M 127 28 A 80 80 0 0 1 180 100" stroke="#16a34a" strokeWidth="20" fill="none" />
-                    {/* Needle */}
-                    <line x1="100" y1="100" x2="130" y2="50" stroke="#1f2937" strokeWidth="3" strokeLinecap="round" />
-                    {/* Center dot */}
-                    <circle cx="100" cy="100" r="4" fill="#1f2937" />
-                  </svg>
-                </div>
-              </div>
-              <div className="text-center mt-6">
-                <div className="text-5xl font-bold text-secondary mb-2">{liquidity.score}</div>
-                <p className="text-gray-600 text-lg">{liquidity.label}</p>
-                <p className="text-sm text-gray-500 mt-2">Min balance (30d): <strong>${Math.round(minBalance).toLocaleString()}</strong> on {minBalanceDate}</p>
-              </div>
-            </motion.div>
-
-            {/* Forecast Graph */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2 }}
-              id="forecast"
-              className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6"
-            >
-              <div className="flex justify-between items-center mb-6">
-                <h2 className="text-2xl font-bold">6-Week Forecast</h2>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={showBaseline}
-                    onChange={(e) => setShowBaseline(e.target.checked)}
-                    className="w-4 h-4"
-                  />
-                  <span className="text-sm font-medium text-gray-700">Show baseline</span>
-                </label>
-              </div>
-              <ResponsiveContainer width="100%" height={320}>
-                <AreaChart data={scenarioData}>
-                  <defs>
-                    <linearGradient id="colorBalance" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#2563eb" stopOpacity={0.3} />
-                      <stop offset="95%" stopColor="#2563eb" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="date" />
-                  <YAxis />
-                  <Tooltip formatter={(value) => `$${value}`} />
-                  <Area type="monotone" dataKey="balance" stroke="#2563eb" strokeWidth={3} fillOpacity={1} fill="url(#colorBalance)" />
-                  {isScenarioActive && (
-                    <>
-                      <Line type="monotone" dataKey="scenarioLow" stroke="#ef4444" strokeDasharray="5 5" strokeWidth={2} dot={false} />
-                      <Line type="monotone" dataKey="scenarioLikely" stroke="#111827" strokeDasharray="5 5" strokeWidth={2.4} dot={false} />
-                      <Line type="monotone" dataKey="scenarioHigh" stroke="#16a34a" strokeDasharray="5 5" strokeWidth={2} dot={false} />
-                    </>
-                  )}
-                  {showBaseline && (
-                    <Line
-                      type="monotone"
-                      dataKey="baseline"
-                      stroke="#9ca3af"
-                      strokeDasharray="6 6"
-                      strokeWidth={2}
-                      dot={false}
-                    />
-                  )}
-                </AreaChart>
-              </ResponsiveContainer>
-              <div className="mt-4 grid grid-cols-3 gap-4 text-sm">
-                <div>💰 Payday: May 5</div>
-                <div>📅 Rent: May 1</div>
-                <div>🎬 Netflix: May 10</div>
-              </div>
-              {isForecastLoading && <p className="mt-4 text-sm text-gray-500">Loading live forecast...</p>}
-            </motion.div>
-
-            {/* Early Warnings */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.3 }}
-              id="alerts"
-              className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6"
-            >
-              <h2 className="text-2xl font-bold mb-4">⚠️ Early Warnings</h2>
-              <div className="space-y-3">
-                <div className="border-l-4 border-red-500 bg-red-50 p-4 rounded">
-                  <p className="font-semibold text-red-900">Overdraft Risk on May 8</p>
-                  <p className="text-sm text-red-800">Rent ($1500) + Netflix ($15) cluster. Balance drops to $2,120.</p>
-                  <button onClick={handleMoveBill} className="text-sm text-red-700 font-semibold mt-2 hover:underline">Move bill →</button>
-                </div>
-              </div>
-            </motion.div>
-          </div>
-
-          {/* Sidebar (Right) */}
-          <div className="space-y-8">
-            {/* What-If Sandbox */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.4 }}
-              id="sandbox"
-              className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6"
-            >
-              <h2 className="text-xl font-bold mb-4">💡 What-If Sandbox</h2>
-              
-              {/* Language toggle */}
-              <div className="flex gap-2 mb-4">
-                {[
-                  { code: 'en', label: '🌐 English' },
-                  { code: 'hinglish', label: '🇮🇳 Hinglish' },
-                  { code: 'hi', label: '🇭🇰 Hindi' },
-                ].map((lang) => (
-                  <button
-                    key={lang.code}
-                    onClick={() => setLanguage(lang.code)}
-                    className={`px-3 py-1 rounded text-sm font-medium transition ${
-                      language === lang.code
-                        ? 'bg-primary text-white'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    }`}
-                  >
-                    {lang.label}
-                  </button>
-                ))}
-              </div>
-
-              {/* Input */}
-              <input
-                type="text"
-                value={scenarioInput}
-                onChange={(e) => setScenarioInput(e.target.value)}
-                placeholder={texts[language].placeholder}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none mb-4"
-              />
-
-              <button
-                onClick={() => evaluateScenario(scenarioInput)}
-                disabled={isScenarioRunning}
-                className="w-full mb-4 py-2.5 rounded-lg bg-[#042132] text-white font-medium hover:bg-[#073047] transition"
-              >
-                {isScenarioRunning ? 'Running...' : 'Run Scenario'}
-              </button>
-
-              {/* Examples */}
-              <div className="space-y-2">
-                {texts[language].examples.map((example, idx) => (
-                  <button
-                    key={idx}
-                    onClick={() => {
-                      setScenarioInput(example)
-                      evaluateScenario(example)
-                    }}
-                    className="w-full text-left px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded text-sm font-medium transition truncate"
-                  >
-                    {example}
-                  </button>
-                ))}
-              </div>
-
-              <p className="mt-4 text-sm text-gray-600">{scenarioNote}</p>
-            </motion.div>
-
-            {/* Confidence Badge */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.5 }}
-              className="bg-gradient-to-br from-[#042132] to-[#0b4a5f] text-white rounded-2xl shadow-sm p-6"
-            >
-              <h3 className="font-semibold mb-2">Confidence Level</h3>
-              <p className="text-3xl font-bold mb-2">{Math.round(confidence)}%</p>
-              <p className="text-sm text-white/80">
-                Lower due to unusual spending pattern last month
-              </p>
-            </motion.div>
-
-            {/* Account Info */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.6 }}
-              className="bg-white rounded-2xl border border-gray-200 p-6"
-            >
-              <h3 className="font-semibold mb-3">Account</h3>
-              <p className="text-sm text-gray-700 mb-3">demo@radar.com</p>
-              <button onClick={handleSignOut} className="w-full btn-secondary py-2 text-sm">Sign Out</button>
-            </motion.div>
+              {PERSONAS.map((p) => (
+                <option key={p} value={p}>{p[0].toUpperCase() + p.slice(1)}</option>
+              ))}
+            </select>
+            <div className="rounded-full px-3 py-1 text-sm bg-lime-100 text-lime-800 border border-lime-200">{greenZoneStreak}-day green zone streak</div>
+            <div className="weather-pill rounded-full px-3 py-1 text-sm bg-emerald-100 text-emerald-800 border border-emerald-200">Financial Weather: Sunny</div>
           </div>
         </div>
-      </div>
+
+        <div className="max-w-7xl mx-auto p-4 md:p-8">{contentByTab[currentTab] || contentByTab.overview}</div>
       </main>
     </div>
   )
