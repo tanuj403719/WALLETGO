@@ -72,16 +72,7 @@ def _decode_supabase_jwt(token: str) -> str:
     return _extract_subject(payload)
 
 
-async def verify_token(
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(_bearer_scheme),
-) -> str:
-    if credentials is None:
-        raise HTTPException(
-            status_code=401,
-            detail={"error": "Unauthorized", "message": "Authorization header is required."},
-        )
-
-    token = credentials.credentials
+def _verify_token_value(token: str) -> str:
     if token == "demo-token":
         return "demo-user"
 
@@ -113,3 +104,29 @@ async def verify_token(
                 ),
             },
         )
+
+
+async def verify_token(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(_bearer_scheme),
+) -> str:
+    if credentials is None:
+        raise HTTPException(
+            status_code=401,
+            detail={"error": "Unauthorized", "message": "Authorization header is required."},
+        )
+
+    return _verify_token_value(credentials.credentials)
+
+
+async def resolve_user_id(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(_bearer_scheme),
+) -> str:
+    """
+    Resolve user identity for both demo and authenticated requests.
+
+    - If Bearer token is provided, verify it.
+    - If no token is provided, treat request as demo flow.
+    """
+    if credentials is None:
+        return "demo-user"
+    return _verify_token_value(credentials.credentials)

@@ -1,26 +1,18 @@
 """
-Authentication business logic: password hashing, JWT issuance, and database seeding.
+Demo constants and Supabase seed helpers.
 """
 
 from __future__ import annotations
 
+import hashlib
 import logging
-import os
-from datetime import datetime, timedelta, timezone
 from typing import Dict, List
 
-import bcrypt
-import jwt
-
-from models.db import SessionLocal, TransactionModel, UserModel
+from services.supabase_service import TRANSACTIONS_TABLE, get_supabase_client
 
 logger = logging.getLogger("walletgo.data.auth")
 
-JWT_SECRET = os.getenv("JWT_SECRET", "walletgo-hackathon-demo-secret-2024")
-JWT_ALGORITHM = "HS256"
-JWT_EXPIRY_HOURS = 24
-
-DEMO_USER_ID = "demo-user-00000000"
+DEMO_USER_ID = "demo-user"
 
 SEED_TRANSACTIONS: List[Dict] = [
     {"date": "2024-03-01", "amount": -1500.00, "category": "rent", "description": "Rent"},
@@ -44,54 +36,47 @@ SEED_TRANSACTIONS: List[Dict] = [
 ]
 
 
-def hash_password(plain: str) -> str:
-    return bcrypt.hashpw(plain.encode(), bcrypt.gensalt()).decode()
+def _transaction_fingerprint(date: str, amount: float, description: str) -> str:
+    normalized_description = " ".join((description or "").strip().lower().split())
+    payload = f"{date}|{float(amount):.2f}|{normalized_description}"
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
-def verify_password(plain: str, hashed: str) -> bool:
-    try:
-        return bcrypt.checkpw(plain.encode(), hashed.encode())
-    except Exception:
-        return False
+def seed_demo_transactions() -> None:
+    """Populate Supabase with demo transactions if missing."""
+    client = get_supabase_client()
 
-
-def create_token(user_id: str, email: str) -> str:
-    payload = {
-        "sub": user_id,
-        "email": email,
-        "iat": datetime.now(timezone.utc),
-        "exp": datetime.now(timezone.utc) + timedelta(hours=JWT_EXPIRY_HOURS),
-        "aud": "authenticated",
+    existing_response = (
+        client.table(TRANSACTIONS_TABLE)
+        .select("fingerprint")
+        .eq("user_id", DEMO_USER_ID)
+        .execute()
+    )
+    existing_fingerprints = {
+        str(row.get("fingerprint"))
+        for row in (existing_response.data or [])
+        if row.get("fingerprint")
     }
-    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
-
-def seed_database() -> None:
-    """Populate the database with demo data if it is empty."""
-    with SessionLocal() as session:
-        if session.query(TransactionModel).first() is not None:
-            return  # Already seeded
-
-        logger.info("Seeding database with demo transactions…")
-
-        demo_user = UserModel(
-            id=DEMO_USER_ID,
-            email="demo@radar.com",
-            password_hash=hash_password("demo123"),
-            display_name="Demo User",
+    payload = []
+    for tx in SEED_TRANSACTIONS:
+        fingerprint = _transaction_fingerprint(tx["date"], tx["amount"], tx["description"])
+        if fingerprint in existing_fingerprints:
+            continue
+        payload.append(
+            {
+                "user_id": DEMO_USER_ID,
+                "date": tx["date"],
+                "amount": tx["amount"],
+                "category": tx["category"],
+                "description": tx["description"],
+                "fingerprint": fingerprint,
+            }
         )
-        session.merge(demo_user)
+        existing_fingerprints.add(fingerprint)
 
-        for tx in SEED_TRANSACTIONS:
-            session.add(
-                TransactionModel(
-                    user_id=DEMO_USER_ID,
-                    date=tx["date"],
-                    amount=tx["amount"],
-                    category=tx["category"],
-                    description=tx["description"],
-                )
-            )
+    if not payload:
+        return
 
-        session.commit()
-        logger.info("Seeded %d transactions for demo user.", len(SEED_TRANSACTIONS))
+    client.table(TRANSACTIONS_TABLE).insert(payload).execute()
+    logger.info("Seeded %d transactions for demo user.", len(payload))

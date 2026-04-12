@@ -6,14 +6,25 @@ const ForecastContext = createContext()
 export function ForecastProvider({ children }) {
   const [forecast, setForecast] = useState(null)
   const [scenarios, setScenarios] = useState([])
+  const [ephemeralTransactions, setEphemeralTransactions] = useState([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState(null)
+
+  const setDemoTransactions = useCallback((transactions = []) => {
+    setEphemeralTransactions(Array.isArray(transactions) ? transactions : [])
+    setForecast(null)
+    setScenarios([])
+  }, [])
+
+  const clearDemoTransactions = useCallback(() => {
+    setEphemeralTransactions([])
+  }, [])
 
   const generateForecast = useCallback(async (days = 42) => {
     setIsLoading(true)
     setError(null)
     try {
-      const response = await forecastAPI.generate(days)
+      const response = await forecastAPI.generate(days, ephemeralTransactions)
       setForecast(response.data)
       return response.data
     } catch (err) {
@@ -22,13 +33,13 @@ export function ForecastProvider({ children }) {
     } finally {
       setIsLoading(false)
     }
-  }, [])
+  }, [ephemeralTransactions])
 
   const runScenario = useCallback(async (description, language = 'en') => {
     setIsLoading(true)
     setError(null)
     try {
-      const response = await scenarioAPI.analyze(description, language)
+      const response = await scenarioAPI.analyze(description, language, ephemeralTransactions)
       setScenarios((current) => [...current, response.data])
       return response.data
     } catch (err) {
@@ -37,11 +48,21 @@ export function ForecastProvider({ children }) {
     } finally {
       setIsLoading(false)
     }
-  }, [])
+  }, [ephemeralTransactions])
 
   return (
     <ForecastContext.Provider
-      value={{ forecast, scenarios, isLoading, error, generateForecast, runScenario }}
+      value={{
+        forecast,
+        scenarios,
+        ephemeralTransactions,
+        isLoading,
+        error,
+        generateForecast,
+        runScenario,
+        setEphemeralTransactions: setDemoTransactions,
+        clearEphemeralTransactions: clearDemoTransactions,
+      }}
     >
       {children}
     </ForecastContext.Provider>

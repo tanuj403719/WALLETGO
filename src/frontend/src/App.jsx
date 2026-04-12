@@ -34,46 +34,11 @@ export default function App() {
             <Route path="/signin" element={<SignInPage />} />
             <Route path="/privacy" element={<PrivacyPage />} />
             <Route path="/terms" element={<TermsPage />} />
-            <Route
-              path="/bank-linking"
-              element={
-                <ProtectedRoute>
-                  <BankLinkingPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/dashboard"
-              element={
-                <ProtectedRoute>
-                  <DashboardPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/dashboard/forecast"
-              element={
-                <ProtectedRoute>
-                  <DashboardPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/dashboard/sandbox"
-              element={
-                <ProtectedRoute>
-                  <DashboardPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/dashboard/alerts"
-              element={
-                <ProtectedRoute>
-                  <DashboardPage />
-                </ProtectedRoute>
-              }
-            />
+            <Route path="/bank-linking" element={<BankLinkingPage />} />
+            <Route path="/dashboard" element={<DashboardPage />} />
+            <Route path="/dashboard/forecast" element={<DashboardPage />} />
+            <Route path="/dashboard/sandbox" element={<DashboardPage />} />
+            <Route path="/dashboard/alerts" element={<DashboardPage />} />
             <Route
               path="/dashboard/settings"
               element={

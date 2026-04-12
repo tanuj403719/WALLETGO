@@ -22,7 +22,6 @@ export default function DemoPage() {
       <div className="absolute -top-20 -left-20 w-80 h-80 rounded-full bg-cyan-400/15 blur-3xl" />
       <div className="absolute -bottom-24 -right-20 w-96 h-96 rounded-full bg-lime-300/12 blur-3xl" />
       <div className="max-w-6xl mx-auto px-4">
-        {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -34,14 +33,12 @@ export default function DemoPage() {
           </p>
         </motion.div>
 
-        {/* Demo Container */}
         <motion.div
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ delay: 0.2 }}
           className="rounded-2xl border border-white/15 bg-white/5 backdrop-blur-sm shadow-xl p-8 mb-8"
         >
-          {/* Chart */}
           <div className="mb-8">
             <h2 className="text-2xl font-semibold mb-4">Your 6-Week Forecast</h2>
             <ResponsiveContainer width="100%" height={400}>
@@ -59,7 +56,6 @@ export default function DemoPage() {
             </ResponsiveContainer>
           </div>
 
-          {/* What-If Button */}
           <div className="text-center">
             <button
               onClick={() => setShowScenario(!showScenario)}
@@ -69,7 +65,6 @@ export default function DemoPage() {
             </button>
           </div>
 
-          {/* Scenario Results */}
           {showScenario && (
             <motion.div
               initial={{ opacity: 0, height: 0 }}
@@ -77,7 +72,7 @@ export default function DemoPage() {
               className="mt-8 pt-8 border-t border-white/15"
             >
               <h3 className="text-xl font-semibold mb-6">Scenario Analysis</h3>
-              
+
               <div className="grid md:grid-cols-3 gap-4">
                 <motion.div
                   initial={{ opacity: 0, x: -20 }}
@@ -127,7 +122,6 @@ export default function DemoPage() {
           )}
         </motion.div>
 
-        {/* Ready CTA */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -136,20 +130,20 @@ export default function DemoPage() {
         >
           <h2 className="text-3xl font-bold mb-4">Ready for the full experience?</h2>
           <p className="text-lg mb-6 text-white/90">
-            Sign up now and connect your real bank account to get personalized forecasts.
+            Upload a statement in demo mode to get personalized forecasts without creating an account.
           </p>
           <div className="flex justify-center gap-4">
             <button
-              onClick={() => navigate('/signin?mode=signup')}
+              onClick={() => navigate('/bank-linking')}
               className="bg-white text-primary px-8 py-3 rounded-lg font-semibold hover:bg-gray-100 transition"
             >
-              Sign Up Free
+              Upload Statement Demo
             </button>
             <button
-              onClick={() => navigate('/signin?demo=1')}
+              onClick={() => navigate('/dashboard')}
               className="border-2 border-white text-white px-8 py-3 rounded-lg font-semibold hover:bg-white/10 transition"
             >
-              Try Demo Account
+              Continue with Sample Data
             </button>
           </div>
         </motion.div>

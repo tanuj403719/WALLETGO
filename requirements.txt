@@ -13,8 +13,8 @@ python-dotenv>=1.0,<2.0
 # ── Inter-Service Communication ────────────────────────────────────────
 httpx>=0.27,<1.0
 
-# ── Database (SQLite fallback via SQLAlchemy) ──────────────────────────
-sqlalchemy>=2.0.23,<3.0
+# ── Database (Supabase Postgres) ───────────────────────────────────────
+supabase>=2.4,<3.0
 
 # ── Forecasting (Prophet) ─────────────────────────────────────────────
 prophet>=1.1.5,<2.0

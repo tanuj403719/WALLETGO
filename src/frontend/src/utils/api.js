@@ -20,15 +20,23 @@ api.interceptors.request.use((config) => {
 
 // Forecast API
 export const forecastAPI = {
-  generate: (days = 42) => api.post('/api/forecast/generate', { days }),
+  generate: (days = 42, ephemeralTransactions = null) =>
+    api.post('/api/forecast/generate', {
+      days,
+      ...(ephemeralTransactions?.length ? { ephemeral_transactions: ephemeralTransactions } : {}),
+    }),
   getCurrent: () => api.get('/api/forecast/current'),
   getHistory: (limit = 10) => api.get(`/api/forecast/history?limit=${limit}`),
 }
 
 // Scenario API
 export const scenarioAPI = {
-  analyze: (description, language = 'en') =>
-    api.post('/api/scenarios/analyze', { description, language }),
+  analyze: (description, language = 'en', ephemeralTransactions = null) =>
+    api.post('/api/scenarios/analyze', {
+      description,
+      language,
+      ...(ephemeralTransactions?.length ? { ephemeral_transactions: ephemeralTransactions } : {}),
+    }),
   getSuggestions: (language = 'en') =>
     api.get(`/api/scenarios/suggestions?language=${language}`),
 }
@@ -43,6 +51,13 @@ export const transactionAPI = {
     const formData = new FormData()
     formData.append('file', file)
     return api.post('/api/transactions/upload', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+  },
+  parseOnly: (file) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    return api.post('/api/transactions/parse-only', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     })
   },

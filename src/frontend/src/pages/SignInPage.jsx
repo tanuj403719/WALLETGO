@@ -55,7 +55,7 @@ export default function SignInPage() {
       if (email === 'demo@radar.com' && password === 'demo123') {
         await signInDemo()
         toast.success('Demo account loaded', { id: 'auth-status' })
-        navigate('/privacy')
+        navigate('/dashboard')
         return
       }
 
@@ -68,7 +68,7 @@ export default function SignInPage() {
             if (!signInAttempt.error) {
               setMode('signin')
               toast.success('Account already exists. Signed in successfully.', { id: 'auth-status' })
-              navigate('/privacy')
+              navigate('/dashboard')
               return
             }
             if (isEmailNotConfirmed(getErrorMessage(signInAttempt.error))) {
@@ -77,15 +77,15 @@ export default function SignInPage() {
           }
           throw error
         }
-        toast.success('Account created. Please review privacy terms.', { id: 'auth-status' })
-        navigate('/privacy')
+        toast.success('Account created. Upload your first statement to unlock stats.', { id: 'auth-status' })
+        navigate('/dashboard')
         return
       }
 
       const { error } = await signIn(email, password)
       if (error) throw error
       toast.success('Signed in successfully', { id: 'auth-status' })
-      navigate('/privacy')
+      navigate('/dashboard')
     } catch (error) {
       const message = getErrorMessage(error)
       if (message.toLowerCase().includes('email rate limit exceeded')) {

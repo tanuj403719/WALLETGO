@@ -47,13 +47,27 @@ create table if not exists public.scenario_runs (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.transactions (
+  id uuid primary key default gen_random_uuid(),
+  user_id text not null,
+  date date not null,
+  amount numeric(12,2) not null,
+  category text not null,
+  description text not null,
+  fingerprint text not null,
+  created_at timestamptz not null default now(),
+  unique (user_id, fingerprint)
+);
+
 create index if not exists idx_forecasts_user_id_created_at on public.forecasts (user_id, created_at desc);
 create index if not exists idx_scenario_runs_user_id_created_at on public.scenario_runs (user_id, created_at desc);
+create index if not exists idx_transactions_user_id_date on public.transactions (user_id, date desc);
 
 alter table public.profiles enable row level security;
 alter table public.user_preferences enable row level security;
 alter table public.forecasts enable row level security;
 alter table public.scenario_runs enable row level security;
+alter table public.transactions enable row level security;
 
 create policy "Profiles are readable by owner"
   on public.profiles for select
@@ -89,6 +103,15 @@ create policy "Scenarios are writable by owner"
   on public.scenario_runs for all
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
+
+create policy "Transactions are readable by owner"
+  on public.transactions for select
+  using (auth.uid()::text = user_id);
+
+create policy "Transactions are writable by owner"
+  on public.transactions for all
+  using (auth.uid()::text = user_id)
+  with check (auth.uid()::text = user_id);
 
 create or replace function public.handle_new_user()
 returns trigger

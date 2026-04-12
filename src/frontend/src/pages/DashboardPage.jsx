@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import {
@@ -27,7 +27,9 @@ import {
 } from 'react-icons/fi'
 import toast from 'react-hot-toast'
 import { useAuth } from '../context/AuthContext'
-import { forecastAPI, scenarioAPI } from '../utils/api'
+import { useForecast } from '../context/ForecastContext'
+import StatementUploader from '../components/StatementUploader'
+import { transactionAPI } from '../utils/api'
 
 const DEFAULT_FORECAST = [
   { date: '1 May', rawDate: '2024-05-01', balance: 3500, low: 3200, high: 3800, baseline: 3550 },
@@ -249,8 +251,11 @@ export default function DashboardPage() {
   const [alertBuffer, setAlertBuffer] = useState(500)
   const [theme, setTheme] = useState(() => localStorage.getItem('radar_theme') || 'dark')
   const [persona, setPersona] = useState('professional')
+  const [isTransactionCheckLoading, setIsTransactionCheckLoading] = useState(false)
+  const [hasTransactions, setHasTransactions] = useState(null)
 
-  const { signOut, user } = useAuth()
+  const { signOut, user, isAuthenticated } = useAuth()
+  const { generateForecast, runScenario } = useForecast()
   const navigate = useNavigate()
   const location = useLocation()
 
@@ -273,33 +278,84 @@ export default function DashboardPage() {
   }, [theme])
 
   useEffect(() => {
-    if (hasFetchedForecast.current) return
-    hasFetchedForecast.current = true
+    if (currentTab === 'settings' && !isAuthenticated) {
+      navigate('/signin', { replace: true, state: { from: location } })
+    }
+  }, [currentTab, isAuthenticated, navigate, location])
 
-    const loadForecast = async () => {
-      setIsForecastLoading(true)
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setHasTransactions(null)
+      setIsTransactionCheckLoading(false)
+      return
+    }
+
+    let cancelled = false
+
+    const checkTransactionHistory = async () => {
+      setIsTransactionCheckLoading(true)
       try {
-        const response = await forecastAPI.getCurrent()
-        const payload = response.data || {}
-        const normalizedRows = normalizeForecastRows(payload.forecast_data)
-        setForecastRows(normalizedRows)
-        setConfidence(toNumber(payload.confidence, 72))
-        setMinBalance(
-          toNumber(
-            payload.min_balance,
-            normalizedRows.reduce((m, r) => Math.min(m, r.balance), normalizedRows[0].balance)
-          )
-        )
-        setMinBalanceDate(formatDateLabel(payload.min_balance_date || normalizedRows[0].rawDate))
+        const response = await transactionAPI.list(1, 0)
+        const rows = Array.isArray(response.data)
+          ? response.data
+          : (response.data?.transactions || [])
+        if (!cancelled) {
+          setHasTransactions(rows.length > 0)
+        }
       } catch (error) {
-        toast.error('Could not load live forecast, showing demo data')
+        if (!cancelled) {
+          // Fallback to existing-user view if lookup fails.
+          setHasTransactions(true)
+        }
       } finally {
-        setIsForecastLoading(false)
+        if (!cancelled) {
+          setIsTransactionCheckLoading(false)
+        }
       }
     }
 
-    loadForecast()
-  }, [])
+    checkTransactionHistory()
+
+    return () => {
+      cancelled = true
+    }
+  }, [isAuthenticated])
+
+  const fetchForecast = useCallback(async () => {
+    setIsForecastLoading(true)
+    try {
+      const payload = await generateForecast(42)
+      const normalizedRows = normalizeForecastRows(payload.forecast_data)
+      setForecastRows(normalizedRows)
+      setConfidence(toNumber(payload.confidence, 72))
+      setMinBalance(
+        toNumber(
+          payload.min_balance,
+          normalizedRows.reduce((m, r) => Math.min(m, r.balance), normalizedRows[0].balance)
+        )
+      )
+      setMinBalanceDate(formatDateLabel(payload.min_balance_date || normalizedRows[0].rawDate))
+    } catch (error) {
+      toast.error('Could not load live forecast, showing demo data')
+    } finally {
+      setIsForecastLoading(false)
+    }
+  }, [generateForecast])
+
+  useEffect(() => {
+    if (hasFetchedForecast.current) return
+    if (isAuthenticated && (isTransactionCheckLoading || hasTransactions === false)) return
+
+    hasFetchedForecast.current = true
+    fetchForecast()
+  }, [fetchForecast, hasTransactions, isAuthenticated, isTransactionCheckLoading])
+
+  const handleStatementUploaded = useCallback(async () => {
+    if (!isAuthenticated) return
+    setHasTransactions(true)
+    hasFetchedForecast.current = false
+    await fetchForecast()
+  }, [fetchForecast, isAuthenticated])
 
   const scenarioData = useMemo(() => {
     const lowMap = new Map(scenarioRows.low.map((row) => [row.date, toNumber(row.balance, null)]))
@@ -341,8 +397,7 @@ export default function DashboardPage() {
 
     setIsScenarioRunning(true)
     try {
-      const response = await scenarioAPI.analyze(trimmed, language)
-      const payload = response.data || {}
+      const payload = await runScenario(trimmed, language)
       const lowRows = payload.low?.forecast_data || []
       const likelyRows = payload.likely?.forecast_data || []
       const highRows = payload.high?.forecast_data || []
@@ -384,6 +439,18 @@ export default function DashboardPage() {
 
   const renderOverview = () => (
     <div className="space-y-6">
+      {isAuthenticated && hasTransactions && (
+        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="glass-card p-6">
+          <div className="mb-4">
+            <h2 className="text-xl font-bold text-slate-900">Upload More Statements</h2>
+            <p className="text-sm text-slate-600 mt-1">
+              Add another CSV or PDF anytime to keep your forecast and stats updated.
+            </p>
+          </div>
+          <StatementUploader onSuccess={handleStatementUploaded} />
+        </motion.div>
+      )}
+
       <div className="grid lg:grid-cols-3 gap-5">
         <MetricCard
           title="Liquidity Score"
@@ -691,18 +758,38 @@ export default function DashboardPage() {
     </motion.div>
   )
 
+  const renderFirstUploadStep = () => (
+    <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="max-w-4xl">
+      <div className="glass-card p-8">
+        <p className="text-xs uppercase tracking-[0.14em] text-sky-700 mb-3">Account Setup</p>
+        <h2 className="text-3xl font-bold text-slate-900 mb-3">Upload your first statement</h2>
+        <p className="text-slate-600 mb-6">
+          Once uploaded, your dashboard stats and forecast will appear automatically.
+        </p>
+        <StatementUploader onSuccess={handleStatementUploaded} />
+      </div>
+    </motion.div>
+  )
+
+  const renderTransactionCheck = () => (
+    <div className="max-w-3xl glass-card p-8">
+      <h2 className="text-2xl font-bold text-slate-900 mb-2">Preparing your dashboard</h2>
+      <p className="text-slate-600">Checking your account data to decide the best starting view...</p>
+    </div>
+  )
+
   const contentByTab = {
     overview: renderOverview(),
     forecast: renderForecast(),
     sandbox: renderSandbox(),
     alerts: renderAlerts(),
-    settings: renderSettings(),
+    settings: isAuthenticated ? renderSettings() : renderOverview(),
   }
 
   return (
-    <div className="postauth-bg relative overflow-hidden flex">
+    <div className="postauth-bg relative flex h-screen overflow-hidden">
       <div className="grain-overlay" />
-      <aside className={`dashboard-sidebar hidden md:flex flex-col bg-white/75 backdrop-blur-sm text-slate-900 border-r border-white/70 transition-all duration-300 relative z-10 ${isMenuCollapsed ? 'w-20' : 'w-72'}`}>
+      <aside className={`dashboard-sidebar hidden md:flex h-full shrink-0 flex-col overflow-hidden bg-white/75 backdrop-blur-sm text-slate-900 border-r border-white/70 transition-all duration-300 relative z-10 ${isMenuCollapsed ? 'w-20' : 'w-72'}`}>
         <div className="h-16 px-4 flex items-center justify-between border-b border-white/10">
           {!isMenuCollapsed && <p className="font-display text-xl">Liquidity Radar</p>}
           <button onClick={() => setIsMenuCollapsed((v) => !v)} className="p-2 rounded-lg bg-slate-100 hover:bg-slate-200 transition">
@@ -716,13 +803,15 @@ export default function DashboardPage() {
           ))}
         </div>
 
-        <div className="mt-auto p-3 border-t border-slate-200 space-y-2">
-          <MenuButton item={SETTINGS_ITEM} isMenuCollapsed={isMenuCollapsed} onClick={() => setMobileMenuOpen(false)} />
-          <button onClick={handleSignOut} className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-red-100 text-left text-red-700">
-            <FiLogOut size={18} />
-            {!isMenuCollapsed && <span>Sign Out</span>}
-          </button>
-        </div>
+        {isAuthenticated && (
+          <div className="mt-auto p-3 border-t border-slate-200 space-y-2">
+            <MenuButton item={SETTINGS_ITEM} isMenuCollapsed={isMenuCollapsed} onClick={() => setMobileMenuOpen(false)} />
+            <button onClick={handleSignOut} className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-red-100 text-left text-red-700">
+              <FiLogOut size={18} />
+              {!isMenuCollapsed && <span>Sign Out</span>}
+            </button>
+          </div>
+        )}
       </aside>
 
       {mobileMenuOpen && (
@@ -730,7 +819,7 @@ export default function DashboardPage() {
           <div className="dashboard-sidebar w-64 h-full bg-white text-slate-900 p-4" onClick={(e) => e.stopPropagation()}>
             <p className="font-display text-xl mb-4">Liquidity Radar</p>
             <div className="space-y-1">
-              {[...MENU_ITEMS, SETTINGS_ITEM].map((item) => (
+              {[...MENU_ITEMS, ...(isAuthenticated ? [SETTINGS_ITEM] : [])].map((item) => (
                 <NavLink
                   key={item.id}
                   to={item.path}
@@ -745,15 +834,17 @@ export default function DashboardPage() {
                 </NavLink>
               ))}
             </div>
-            <button onClick={handleSignOut} className="mt-5 w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-red-100 text-left text-red-700">
-              <FiLogOut size={18} />
-              <span>Sign Out</span>
-            </button>
+            {isAuthenticated && (
+              <button onClick={handleSignOut} className="mt-5 w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-red-100 text-left text-red-700">
+                <FiLogOut size={18} />
+                <span>Sign Out</span>
+              </button>
+            )}
           </div>
         </div>
       )}
 
-      <main className="flex-1 min-w-0 relative z-10">
+      <main className="relative z-10 flex h-full min-w-0 flex-1 flex-col overflow-y-auto">
         <div className="dashboard-topbar h-16 px-4 md:px-8 bg-white/70 backdrop-blur border-b border-white/70 flex items-center justify-between sticky top-0 z-20">
           <div className="flex items-center gap-3">
             <button onClick={() => setMobileMenuOpen(true)} className="md:hidden p-2 rounded-lg border border-gray-200">
@@ -780,7 +871,13 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        <div className="max-w-7xl mx-auto p-4 md:p-8">{contentByTab[currentTab] || contentByTab.overview}</div>
+        <div className="max-w-7xl mx-auto p-4 md:p-8">
+          {isAuthenticated && isTransactionCheckLoading
+            ? renderTransactionCheck()
+            : isAuthenticated && hasTransactions === false
+              ? renderFirstUploadStep()
+              : (contentByTab[currentTab] || contentByTab.overview)}
+        </div>
       </main>
     </div>
   )

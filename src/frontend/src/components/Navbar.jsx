@@ -49,14 +49,6 @@ export default function Navbar() {
             >
               Privacy
             </Link>
-            <Link
-              to="/dashboard/settings"
-              className={`${
-                isActive('/dashboard/settings') ? 'text-radar-accent font-semibold' : 'text-slate-200'
-              } hover:text-radar-accent transition`}
-            >
-              Settings
-            </Link>
             <Link to="/signin" className="btn-primary">
               Sign In
             </Link>
@@ -91,12 +83,6 @@ export default function Navbar() {
               className="block px-4 py-2 text-slate-200 hover:text-radar-accent"
             >
               Privacy
-            </Link>
-            <Link
-              to="/dashboard/settings"
-              className="block px-4 py-2 text-slate-200 hover:text-radar-accent"
-            >
-              Settings
             </Link>
             <Link
               to="/signin"

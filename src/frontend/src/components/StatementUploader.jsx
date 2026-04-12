@@ -2,6 +2,8 @@ import { useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import toast from 'react-hot-toast'
 
+import { useAuth } from '../context/AuthContext'
+import { useForecast } from '../context/ForecastContext'
 import { transactionAPI } from '../utils/api'
 
 const ACCEPTED_EXTENSIONS = ['.csv', '.pdf']
@@ -13,6 +15,8 @@ const hasValidExtension = (name) => {
 }
 
 export default function StatementUploader({ onSuccess }) {
+  const { isAuthenticated } = useAuth()
+  const { setEphemeralTransactions, clearEphemeralTransactions } = useForecast()
   const [file, setFile] = useState(null)
   const [status, setStatus] = useState('idle')
   const [message, setMessage] = useState('')
@@ -72,9 +76,22 @@ export default function StatementUploader({ onSuccess }) {
     setMessage('')
     setDetectedHeaders(null)
     try {
-      const response = await transactionAPI.uploadStatement(file)
-      const imported = response.data.imported
-      const msg = `Imported ${imported} transactions`
+      let msg = ''
+
+      if (isAuthenticated) {
+        const response = await transactionAPI.uploadStatement(file)
+        const imported = response.data.imported
+        clearEphemeralTransactions()
+        msg = `Imported ${imported} transactions`
+      } else {
+        const response = await transactionAPI.parseOnly(file)
+        const parsed = Array.isArray(response.data)
+          ? response.data
+          : (response.data?.transactions || [])
+        setEphemeralTransactions(parsed)
+        msg = `Parsed ${parsed.length} transactions (demo mode)`
+      }
+
       setStatus('success')
       setMessage(msg)
       toast.success(msg)

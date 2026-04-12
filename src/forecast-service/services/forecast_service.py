@@ -18,6 +18,17 @@ except Exception:  # pragma: no cover
 logger = logging.getLogger("walletgo.forecast")
 
 
+def _safe_float(value: object, default: float = 0.0) -> float:
+    """Convert numeric-ish values to float while guarding against NaN/None."""
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return float(default)
+    if pd.isna(parsed):
+        return float(default)
+    return parsed
+
+
 def _prepare_series(transactions: List[Dict]) -> pd.DataFrame:
     """Convert raw transactions into a daily time-series DataFrame."""
     if not transactions:
@@ -41,18 +52,39 @@ def _historical_balance_series(daily: pd.DataFrame, starting_balance: float) -> 
 
 def _build_fallback_rows(daily: pd.DataFrame, days: int, starting_balance: float) -> List[Dict]:
     """Heuristic-based fallback when Prophet is unavailable."""
-    running_balance = float(starting_balance + daily["amount"].sum())
+    safe_daily = daily.copy()
+    if safe_daily.empty:
+        safe_daily = pd.DataFrame(
+            {
+                "ds": [pd.Timestamp(datetime.utcnow().date())],
+                "amount": [0.0],
+            }
+        )
+
+    safe_daily["ds"] = pd.to_datetime(safe_daily["ds"], errors="coerce")
+    safe_daily["amount"] = pd.to_numeric(safe_daily["amount"], errors="coerce").fillna(0.0)
+    safe_daily = safe_daily.dropna(subset=["ds"])
+
+    if safe_daily.empty:
+        safe_daily = pd.DataFrame(
+            {
+                "ds": [pd.Timestamp(datetime.utcnow().date())],
+                "amount": [0.0],
+            }
+        )
+
+    running_balance = float(starting_balance + safe_daily["amount"].sum())
     weekday_means = (
-        daily.assign(weekday=daily["ds"].dt.weekday)
+        safe_daily.assign(weekday=safe_daily["ds"].dt.weekday)
         .groupby("weekday")["amount"]
         .mean()
         .to_dict()
     )
-    recent_volatility = float(daily["amount"].tail(30).std(ddof=0) or 100.0)
-    trend = float(daily["amount"].tail(14).mean() or 0.0)
+    recent_volatility = _safe_float(safe_daily["amount"].tail(30).std(ddof=0), 0.0)
+    trend = _safe_float(safe_daily["amount"].tail(14).mean(), 0.0)
 
     forecast_rows: List[Dict] = []
-    start_date = daily["ds"].iloc[-1]
+    start_date = safe_daily["ds"].iloc[-1]
 
     for offset in range(1, days + 1):
         date = start_date + timedelta(days=offset)
@@ -76,7 +108,7 @@ def _build_fallback_rows(daily: pd.DataFrame, days: int, starting_balance: float
 
 def _prophet_rows(daily: pd.DataFrame, days: int, starting_balance: float) -> List[Dict]:
     """Generate forecast rows using Facebook Prophet."""
-    if Prophet is None:
+    if Prophet is None or len(daily) < 2:
         return _build_fallback_rows(daily, days, starting_balance)
 
     history = _historical_balance_series(daily, starting_balance)
@@ -113,11 +145,16 @@ def generate_forecast(
     starting_balance: float = 5000.0,
 ) -> Dict:
     daily = _prepare_series(transactions)
+    low_data_fallback = len(daily) < 2
+    used_fallback = Prophet is None or low_data_fallback
     forecast_rows = _prophet_rows(daily, days, starting_balance)
 
     min_point = min(forecast_rows, key=lambda item: item["balance"])
-    recent_volatility = float(daily["amount"].tail(30).std(ddof=0) or 0.0)
-    confidence = max(45.0, min(95.0, 95.0 - (recent_volatility / 25.0)))
+    recent_volatility = _safe_float(daily["amount"].tail(30).std(ddof=0), 0.0)
+    if low_data_fallback:
+        confidence = 15.0
+    else:
+        confidence = max(45.0, min(95.0, 95.0 - (recent_volatility / 25.0)))
 
     return {
         "forecast_data": forecast_rows,
@@ -125,7 +162,7 @@ def generate_forecast(
         "min_balance": min_point["balance"],
         "min_balance_date": min_point["date"],
         "starting_balance": starting_balance,
-        "model": "prophet" if Prophet is not None else "fallback",
+        "model": "fallback" if used_fallback else "prophet",
     }
 
 

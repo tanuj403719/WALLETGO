@@ -96,6 +96,24 @@ export default function BankLinkingPage() {
         </div>
 
         <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.2 }}
+          className="mb-10"
+        >
+          <div className="glass-card p-8">
+            <h2 className="text-2xl font-bold mb-2 text-slate-900">Or upload your bank statement</h2>
+            <p className="text-slate-600 mb-6">
+              No login required for demo mode. Upload CSV/PDF and we will generate an in-memory forecast instantly.
+            </p>
+            <StatementUploader onSuccess={() => navigate('/dashboard')} />
+            <div className="soft-panel mt-4 p-3 rounded-lg text-sm text-slate-700">
+              Supports NatWest, Monzo, Barclays, and most standard bank CSV exports
+            </div>
+          </div>
+        </motion.div>
+
+        <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           className="soft-panel px-6 py-5 text-amber-900"
