@@ -25,29 +25,9 @@ export default function LandingPage() {
     },
   ]
 
-  const movingStrip = [
-    'Stop looking backwards. Start seeing your financial future.',
-    'Forecast horizon: 42 days',
-    'Scenario engine: Low / Likely / High',
-    'Built for NatWest Code for Purpose',
-    'Hinglish + Hindi + English support',
-  ]
-
   return (
     <div className="relative min-h-screen overflow-hidden bg-radar-ink text-radar-paper">
       <div className="radar-aurora" aria-hidden="true" />
-
-      <section className="border-b border-white/15 bg-black/20 backdrop-blur-sm">
-        <div className="ticker-shell">
-          <div className="ticker-track">
-            {[...movingStrip, ...movingStrip].map((item, idx) => (
-              <span className="ticker-item" key={`${item}-${idx}`}>
-                {item}
-              </span>
-            ))}
-          </div>
-        </div>
-      </section>
 
       <section className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-14 md:py-20">
         <div className="grid lg:grid-cols-2 gap-10 md:gap-14 items-center">

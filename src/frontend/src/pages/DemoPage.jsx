@@ -134,7 +134,7 @@ export default function DemoPage() {
           </p>
           <div className="flex justify-center gap-4">
             <button
-              onClick={() => navigate('/bank-linking')}
+              onClick={() => navigate('/bank-linking?mode=upload')}
               className="bg-white text-primary px-8 py-3 rounded-lg font-semibold hover:bg-gray-100 transition"
             >
               Upload Statement Demo

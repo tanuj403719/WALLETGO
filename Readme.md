@@ -10,7 +10,7 @@ Built for the **NatWest Code for Purpose Hackathon**.
 
 - **6-Week Balance Forecast** — Prophet time-series model with confidence intervals
 - **What-If Scenario Analysis** — "What happens if I spend £500 on a flight this week?"
-- **Multilingual Explanations** — English, Hinglish, and Hindi via GPT-4o-mini
+- **Multilingual Explanations** — English, Hinglish, and Hindi via Gemini
 - **Early Warning Alerts** — Overdraft risk and tight-cash-buffer notifications
 - **Zero External Config** — Runs fully offline with SQLite and template fallbacks
 - **Demo Mode** — One-click access with pre-seeded realistic transaction data
@@ -32,7 +32,7 @@ Browser (React/Vite)  :3000
 :8003     :8001     :8002
 Data      Forecast   AI
 Service   Service    Service
-SQLite    Prophet    GPT-4o-mini
+SQLite    Prophet    Gemini
                      (template fallback)
 ```
 
@@ -41,7 +41,7 @@ SQLite    Prophet    GPT-4o-mini
 | API Gateway | 8080 | Auth, routing, orchestration |
 | Data Service | 8003 | SQLite persistence, bcrypt auth, JWT issuance |
 | Forecast Service | 8001 | Prophet time-series forecasting |
-| AI Service | 8002 | NL explanations (OpenAI / template fallback) |
+| AI Service | 8002 | NL explanations (Gemini / template fallback) |
 | Frontend | 3000 | React + Vite + Tailwind |
 
 ---
@@ -123,7 +123,7 @@ cd WALLETGO
 
 # 2. Copy environment file
 cp .env.example .env
-# Optionally add your OPENAI_API_KEY in .env (the app works without it)
+# Optionally add your GEMINI_API_KEY in .env (the app works without it)
 
 # 3. Run everything with one command
 chmod +x scripts/start.sh
@@ -162,7 +162,7 @@ Copy-Item .env.example .env
 conda create -n walletgo python=3.11 -y
 conda activate walletgo
 conda install -c conda-forge prophet pandas numpy -y
-pip install fastapi uvicorn pydantic python-dotenv httpx sqlalchemy openai email-validator PyJWT bcrypt python-dateutil
+pip install fastapi uvicorn pydantic python-dotenv httpx sqlalchemy google-generativeai email-validator PyJWT bcrypt python-dateutil
 
 # 3. Install frontend dependencies
 cd src\frontend; npm install; cd ..\..
@@ -194,9 +194,10 @@ cd src\frontend; npm run dev
 Copy `.env.example` to `.env`. The app runs fully offline without any variables set.
 
 ```env
-# ── Optional: enables real GPT-4o-mini explanations ──────────────────
+# ── Optional: enables real Gemini explanations ───────────────────────
 # Without this, the app falls back to template-based responses (still works)
-OPENAI_API_KEY=
+GEMINI_API_KEY=
+GEMINI_MODEL=gemini-2.0-flash
 
 # ── JWT signing secret (change this before any real deployment) ───────
 JWT_SECRET=walletgo-hackathon-demo-secret-2024
@@ -311,7 +312,7 @@ npm run dev
 | API Gateway | Python FastAPI, httpx (async, retry logic), PyJWT |
 | Data Service | FastAPI, SQLAlchemy, SQLite, bcrypt |
 | Forecast Service | FastAPI, Facebook Prophet, pandas, numpy |
-| AI Service | FastAPI, OpenAI SDK (gpt-4o-mini), template fallback |
+| AI Service | FastAPI, Gemini SDK, template fallback |
 
 ---
 

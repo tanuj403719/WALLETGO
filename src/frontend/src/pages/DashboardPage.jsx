@@ -255,11 +255,14 @@ export default function DashboardPage() {
   const [hasTransactions, setHasTransactions] = useState(null)
 
   const { signOut, user, isAuthenticated } = useAuth()
-  const { generateForecast, runScenario } = useForecast()
+  const { generateForecast, runScenario, clearEphemeralTransactions } = useForecast()
   const navigate = useNavigate()
   const location = useLocation()
 
   const currentTab = getCurrentTab(location.pathname)
+  const contentContainerClass = currentTab === 'forecast' || currentTab === 'settings'
+    ? 'w-full max-w-[1600px] mx-auto p-4 md:p-8'
+    : 'max-w-7xl mx-auto p-4 md:p-8'
   const liquidity = useMemo(() => computeLiquidityScore(minBalance), [minBalance])
   const hasFetchedForecast = useRef(false)
   const isDark = theme === 'dark'
@@ -386,6 +389,11 @@ export default function DashboardPage() {
   const handleSignOut = async () => {
     await signOut()
     navigate('/signin')
+  }
+
+  const handleExitDemo = () => {
+    clearEphemeralTransactions()
+    navigate('/')
   }
 
   const evaluateScenario = async (text) => {
@@ -527,8 +535,8 @@ export default function DashboardPage() {
   )
 
   const renderForecast = () => (
-    <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
-      <div className="glass-card p-6">
+    <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="space-y-6 w-full">
+      <div className="glass-card p-6 w-full">
         <div className="flex justify-between items-center mb-6">
           <div className="flex items-center gap-3">
             <h2 className="text-2xl font-bold text-slate-900">Forecast Timeline</h2>
@@ -592,10 +600,10 @@ export default function DashboardPage() {
         {isForecastLoading && <p className="mt-4 text-sm text-gray-500">Loading live forecast...</p>}
       </div>
 
-      <div className="grid md:grid-cols-3 gap-4 text-sm">
-        <div className="soft-panel px-4 py-3">💰 Payday: May 5</div>
-        <div className="soft-panel px-4 py-3">📅 Rent Debited: May 1</div>
-        <div className="soft-panel px-4 py-3">🎬 Subscriptions: May 10</div>
+      <div className="grid md:grid-cols-3 gap-4 text-sm w-full">
+        <div className="soft-panel px-4 py-3 font-medium text-slate-800">💰 Payday: May 5</div>
+        <div className="soft-panel px-4 py-3 font-medium text-slate-800">📅 Rent Debited: May 1</div>
+        <div className="soft-panel px-4 py-3 font-medium text-slate-800">🎬 Subscriptions: May 10</div>
       </div>
     </motion.div>
   )
@@ -699,60 +707,101 @@ export default function DashboardPage() {
   )
 
   const renderSettings = () => (
-    <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="glass-card p-6 max-w-3xl">
-      <h2 className="text-2xl font-bold mb-4 text-slate-900">Settings</h2>
-      <div className="space-y-6">
-        <div>
-          <p className="text-sm font-semibold text-gray-800 mb-2">Display Currency</p>
-          <select
-            value={currency}
-            onChange={(e) => setCurrency(e.target.value)}
-            className="w-full md:w-72 rounded-xl border border-slate-300 px-3 py-2 bg-white"
-          >
-            <option value="USD">USD ($)</option>
-            <option value="GBP">GBP (GBP)</option>
-            <option value="EUR">EUR (EUR)</option>
-          </select>
-        </div>
+    <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="w-full space-y-6">
+      <div className="glass-card p-7 md:p-9">
+        <div className="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-6">
+          <div>
+            <p className="text-xs uppercase tracking-[0.18em] text-sky-700 mb-2">Personalization</p>
+            <h2 className="font-display text-4xl md:text-5xl leading-[0.95] text-slate-900">Settings Studio</h2>
+            <p className="text-slate-600 mt-3 max-w-2xl">
+              Shape your Radar experience for how you plan money day-to-day. Changes apply instantly across forecast, alerts, and scenario views.
+            </p>
+          </div>
 
-        <div>
-          <p className="text-sm font-semibold text-gray-800 mb-2">Appearance</p>
-          <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3">
-            <div>
-              <p className="font-medium text-slate-800">Dark Mode</p>
-              <p className="text-sm text-slate-600">Switch between light and dark UI themes</p>
+          <div className="grid grid-cols-2 gap-3 min-w-[280px]">
+            <div className="soft-panel px-4 py-3">
+              <p className="text-xs uppercase tracking-[0.12em] text-slate-500">Theme</p>
+              <p className="mt-1 font-semibold text-slate-900">{theme === 'dark' ? 'Dark' : 'Light'}</p>
             </div>
-            <button
-              type="button"
-              onClick={() => setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'))}
-              className={`w-14 h-8 rounded-full p-1 transition ${theme === 'dark' ? 'bg-teal-600' : 'bg-slate-300'}`}
-              aria-label="Toggle dark mode"
-            >
-              <span
-                className={`block h-6 w-6 rounded-full bg-white transition-transform ${theme === 'dark' ? 'translate-x-6' : 'translate-x-0'}`}
-              />
-            </button>
+            <div className="soft-panel px-4 py-3">
+              <p className="text-xs uppercase tracking-[0.12em] text-slate-500">Currency</p>
+              <p className="mt-1 font-semibold text-slate-900">{currency}</p>
+            </div>
+            <div className="soft-panel px-4 py-3 col-span-2">
+              <p className="text-xs uppercase tracking-[0.12em] text-slate-500">Active Buffer</p>
+              <p className="mt-1 font-semibold text-slate-900">{formatMoney(alertBuffer, currency)}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid xl:grid-cols-3 gap-6 items-start">
+        <div className="guide-card rounded-2xl p-6 border border-sky-200 bg-gradient-to-br from-sky-50 via-cyan-50 to-teal-50 shadow-[0_14px_30px_rgba(0,0,0,0.08)]">
+          <p className="text-xs uppercase tracking-[0.14em] text-sky-700 mb-4">Personalization Tips</p>
+          <div className="space-y-3 text-sm">
+            <p>Pick your preferred currency before sharing screenshots or exports.</p>
+            <p>Dark mode helps during demos and low-light judging sessions.</p>
+            <p>Increase alert buffer if you want earlier warnings before tight days.</p>
+          </div>
+          <div className="mt-6 rounded-xl bg-white border border-sky-200 p-4 text-sm">
+            Signed in as <span className="font-semibold">{user?.email || 'Unknown user'}</span>
           </div>
         </div>
 
-        <div>
-          <p className="text-sm font-semibold text-gray-800 mb-2">Low Balance Alert Buffer</p>
-          <input
-            type="range"
-            min="200"
-            max="3000"
-            step="100"
-            value={alertBuffer}
-            onChange={(e) => setAlertBuffer(Number(e.target.value))}
-            className="w-full md:w-96 accent-range"
-          />
-          <p className="text-sm text-gray-600 mt-1">Alert me when projected balance falls below {formatMoney(alertBuffer, currency)}</p>
-        </div>
+        <div className="glass-card xl:col-span-2 p-7 md:p-8 space-y-8">
+          <section className="space-y-3">
+            <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Display Currency</p>
+            <select
+              value={currency}
+              onChange={(e) => setCurrency(e.target.value)}
+              className="w-full max-w-xl rounded-xl border border-slate-300 px-4 py-3 bg-white font-medium"
+            >
+              <option value="USD">USD ($)</option>
+              <option value="GBP">GBP (GBP)</option>
+              <option value="EUR">EUR (EUR)</option>
+            </select>
+          </section>
 
-        <div className="soft-panel px-4 py-3">
-          <p className="text-sm text-gray-700">
-            Signed in as: <span className="font-semibold">{user?.email || 'Unknown user'}</span>
-          </p>
+          <section className="space-y-3">
+            <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Appearance</p>
+            <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-5 py-4">
+              <div>
+                <p className="font-semibold text-slate-800">Dark Mode</p>
+                <p className="text-sm text-slate-600 mt-0.5">Switch between light and dark UI themes</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'))}
+                className={`w-16 h-9 rounded-full p-1 transition ${theme === 'dark' ? 'bg-teal-600' : 'bg-slate-300'}`}
+                aria-label="Toggle dark mode"
+              >
+                <span
+                  className={`block h-7 w-7 rounded-full bg-white transition-transform ${theme === 'dark' ? 'translate-x-7' : 'translate-x-0'}`}
+                />
+              </button>
+            </div>
+          </section>
+
+          <section className="space-y-3">
+            <div className="flex items-center justify-between gap-4">
+              <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Low Balance Alert Buffer</p>
+              <span className="accent-pill">{formatMoney(alertBuffer, currency)}</span>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-white px-5 py-4">
+              <input
+                type="range"
+                min="200"
+                max="3000"
+                step="100"
+                value={alertBuffer}
+                onChange={(e) => setAlertBuffer(Number(e.target.value))}
+                className="w-full accent-range"
+              />
+              <p className="text-sm text-slate-600 mt-2">
+                Alert me when projected balance falls below <span className="font-semibold">{formatMoney(alertBuffer, currency)}</span>
+              </p>
+            </div>
+          </section>
         </div>
       </div>
     </motion.div>
@@ -803,15 +852,22 @@ export default function DashboardPage() {
           ))}
         </div>
 
-        {isAuthenticated && (
-          <div className="mt-auto p-3 border-t border-slate-200 space-y-2">
-            <MenuButton item={SETTINGS_ITEM} isMenuCollapsed={isMenuCollapsed} onClick={() => setMobileMenuOpen(false)} />
-            <button onClick={handleSignOut} className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-red-100 text-left text-red-700">
+        <div className="mt-auto p-3 border-t border-slate-200 space-y-2">
+          {isAuthenticated ? (
+            <>
+              <MenuButton item={SETTINGS_ITEM} isMenuCollapsed={isMenuCollapsed} onClick={() => setMobileMenuOpen(false)} />
+              <button onClick={handleSignOut} className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-red-100 text-left text-red-700">
+                <FiLogOut size={18} />
+                {!isMenuCollapsed && <span>Sign Out</span>}
+              </button>
+            </>
+          ) : (
+            <button onClick={handleExitDemo} className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-slate-100 text-left text-slate-700">
               <FiLogOut size={18} />
-              {!isMenuCollapsed && <span>Sign Out</span>}
+              {!isMenuCollapsed && <span>Exit Demo</span>}
             </button>
-          </div>
-        )}
+          )}
+        </div>
       </aside>
 
       {mobileMenuOpen && (
@@ -834,10 +890,15 @@ export default function DashboardPage() {
                 </NavLink>
               ))}
             </div>
-            {isAuthenticated && (
+            {isAuthenticated ? (
               <button onClick={handleSignOut} className="mt-5 w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-red-100 text-left text-red-700">
                 <FiLogOut size={18} />
                 <span>Sign Out</span>
+              </button>
+            ) : (
+              <button onClick={handleExitDemo} className="mt-5 w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-slate-100 text-left text-slate-700">
+                <FiLogOut size={18} />
+                <span>Exit Demo</span>
               </button>
             )}
           </div>
@@ -871,7 +932,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        <div className="max-w-7xl mx-auto p-4 md:p-8">
+        <div className={contentContainerClass}>
           {isAuthenticated && isTransactionCheckLoading
             ? renderTransactionCheck()
             : isAuthenticated && hasTransactions === false

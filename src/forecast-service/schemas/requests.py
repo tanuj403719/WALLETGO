@@ -22,4 +22,9 @@ class ForecastHistoryRequest(BaseModel):
 
 class ScenarioRunRequest(BaseModel):
     base_forecast: Dict
-    scenario: Dict
+    scenario_events: List[Dict]
+
+    @property
+    def scenario(self) -> List[Dict]:
+        """Backward-compatible alias used by existing route code."""
+        return self.scenario_events

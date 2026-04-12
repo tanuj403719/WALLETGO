@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
 
 import StatementUploader from '../components/StatementUploader'
@@ -8,6 +8,8 @@ import StatementUploader from '../components/StatementUploader'
 export default function BankLinkingPage() {
   const [selected, setSelected] = useState(null)
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const uploadOnly = searchParams.get('mode') === 'upload'
 
   const handleConnectReal = () => {
     setSelected('real')
@@ -31,17 +33,20 @@ export default function BankLinkingPage() {
           animate={{ opacity: 1, y: 0 }}
           className="text-center mb-12"
         >
-          <p className="accent-pill mb-4">Step 2 of 3</p>
+          <p className="accent-pill mb-4">{uploadOnly ? 'Demo Upload' : 'Step 2 of 3'}</p>
           <h1 className="font-display text-5xl md:text-6xl mb-4 leading-[0.92] text-slate-900">
-            Choose Your
-            <span className="block text-sky-700">Data Path</span>
+            {uploadOnly ? 'Upload Your' : 'Choose Your'}
+            <span className="block text-sky-700">{uploadOnly ? 'Bank Statement' : 'Data Path'}</span>
           </h1>
           <p className="text-slate-600 text-lg max-w-2xl mx-auto">
-            Pick the flow that matches your demo style. Both options unlock the full Radar dashboard.
+            {uploadOnly
+              ? 'Upload CSV/PDF now and we will take you straight to live stats on the dashboard.'
+              : 'Pick the flow that matches your demo style. Both options unlock the full Radar dashboard.'}
           </p>
         </motion.div>
 
-        <div className="grid md:grid-cols-2 gap-6 md:gap-8 mb-10">
+        {!uploadOnly && (
+          <div className="grid md:grid-cols-2 gap-6 md:gap-8 mb-10">
           <motion.div
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
@@ -93,7 +98,8 @@ export default function BankLinkingPage() {
               Launch Demo Workspace
             </button>
           </motion.div>
-        </div>
+          </div>
+        )}
 
         <motion.div
           initial={{ opacity: 0 }}
@@ -113,15 +119,6 @@ export default function BankLinkingPage() {
           </div>
         </motion.div>
 
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="soft-panel px-6 py-5 text-amber-900"
-        >
-          <p>
-            <strong>Hackathon tip:</strong> Demo mode is fastest for judges. You can switch to a real bank-linked flow later from Settings.
-          </p>
-        </motion.div>
       </div>
     </div>
   )

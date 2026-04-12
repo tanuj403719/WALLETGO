@@ -38,7 +38,7 @@ async def analyze_scenario(request: ScenarioRequest, user_id: str = Depends(reso
             f"{DATA_SERVICE_URL}/api/transactions/list",
             params={"user_id": user_id},
         )
-        transactions = tx_data.get("items", [])
+        transactions = tx_data.get("transactions") or tx_data.get("items", [])
 
     # 2. Generate base forecast
     base_forecast = await forward(
@@ -55,16 +55,24 @@ async def analyze_scenario(request: ScenarioRequest, user_id: str = Depends(reso
     )
 
     # 4. Run scenario on the base forecast
+    parsed_events = intent.get("events") if isinstance(intent, dict) else None
+    if not isinstance(parsed_events, list) or not parsed_events:
+        # Backward-compatible fallback for older AI parser shape.
+        parsed_events = [
+            {
+                "type": "one_time_income" if intent.get("intent") in {"income", "save"} else "one_time_spend",
+                "amount": float(intent.get("amount", 0.0) or 0.0),
+                "date_offset_days": 0,
+                "description": request.description,
+            }
+        ]
+
     scenario_results = await forward(
         "POST",
         f"{FORECAST_SERVICE_URL}/api/forecast/scenario",
         json={
             "base_forecast": base_forecast,
-            "scenario": {
-                "amount": intent.get("amount", 0.0),
-                "type": intent.get("intent", "spend"),
-                "date": base_forecast["forecast_data"][0]["date"],
-            },
+            "scenario_events": parsed_events,
         },
     )
 

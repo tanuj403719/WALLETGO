@@ -16,6 +16,76 @@ from services.supabase_service import TRANSACTIONS_TABLE, get_supabase_client
 logger = logging.getLogger("walletgo.data.transactions")
 
 
+def _description_key(value: str) -> str:
+    return " ".join((value or "").strip().lower().split())
+
+
+def _detect_recurring_patterns(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Infer recurring transaction patterns from cadence + amount consistency."""
+    groups: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+    for row in rows:
+        key = _description_key(str(row.get("description") or ""))
+        if not key:
+            continue
+        groups[key].append(row)
+
+    recurring: List[Dict[str, Any]] = []
+    for key, entries in groups.items():
+        if len(entries) < 2:
+            continue
+
+        amounts = [abs(float(e.get("amount", 0) or 0)) for e in entries]
+        avg_amount = sum(amounts) / len(amounts)
+        if avg_amount <= 0:
+            continue
+
+        if any(abs(a - avg_amount) / avg_amount > 0.10 for a in amounts):
+            continue
+
+        try:
+            dates = sorted(datetime.strptime(str(e.get("date")), "%Y-%m-%d") for e in entries)
+        except ValueError:
+            continue
+
+        if len(dates) < 2:
+            continue
+
+        gaps = [(dates[i + 1] - dates[i]).days for i in range(len(dates) - 1)]
+        avg_gap = sum(gaps) / len(gaps)
+
+        frequency = ""
+        day_of_month = None
+        day_of_week = None
+        if 25 <= avg_gap <= 35:
+            frequency = "monthly"
+            day_of_month = dates[-1].day
+        elif 6 <= avg_gap <= 8:
+            frequency = "weekly"
+            day_of_week = dates[-1].weekday()
+        else:
+            continue
+
+        signed_amount = sum(float(e.get("amount", 0) or 0) for e in entries) / len(entries)
+        if signed_amount == 0:
+            continue
+
+        recurring.append(
+            {
+                "description_key": key,
+                "description": str(entries[-1].get("description") or ""),
+                "type": "income" if signed_amount > 0 else "expense",
+                "amount": round(abs(signed_amount), 2),
+                "signed_amount": round(signed_amount, 2),
+                "frequency": frequency,
+                "category": str(entries[-1].get("category") or "general"),
+                "day_of_month": day_of_month,
+                "day_of_week": day_of_week,
+            }
+        )
+
+    return recurring
+
+
 def get_transactions(user_id: str = DEMO_USER_ID, limit: int = 100, offset: int = 0) -> Dict[str, Any]:
     client = get_supabase_client()
     safe_limit = max(1, min(limit, 1000))
@@ -40,6 +110,19 @@ def get_transactions(user_id: str = DEMO_USER_ID, limit: int = 100, offset: int 
         }
         for row in rows
     ]
+
+    recurring_patterns = _detect_recurring_patterns(items)
+    recurring_by_key = {pattern["description_key"]: pattern for pattern in recurring_patterns}
+    for item in items:
+        key = _description_key(str(item.get("description") or ""))
+        pattern = recurring_by_key.get(key)
+        item["is_recurring"] = bool(pattern)
+        if pattern:
+            item["recurring_frequency"] = pattern.get("frequency")
+            item["recurring_day_of_month"] = pattern.get("day_of_month")
+            item["recurring_day_of_week"] = pattern.get("day_of_week")
+            item["recurring_signed_amount"] = pattern.get("signed_amount")
+
     total = response.count if response.count is not None else len(items)
     return {"items": items, "transactions": items, "count": total}
 
@@ -82,62 +165,16 @@ def get_recurring_bills(user_id: str = DEMO_USER_ID) -> Dict[str, Any]:
     )
     rows = response.data or []
 
-    # Group by (description, sign) so "Salary" and "Rent" don't merge
-    groups: Dict[str, List[Dict]] = defaultdict(list)
-    for row in rows:
-        description = str(row.get("description") or "")
-        key = description.strip().lower()
-        groups[key].append(
-            {
-                "date": row.get("date"),
-                "amount": float(row.get("amount", 0) or 0),
-                "description": description,
-                "category": row.get("category") or "general",
-            }
-        )
-
-    recurring = []
-    for desc, entries in groups.items():
-        if len(entries) < 2:
-            continue
-
-        amounts = [abs(e["amount"]) for e in entries]
-        avg_amount = sum(amounts) / len(amounts)
-
-        # All amounts within 10% of the average → consistent
-        if any(abs(a - avg_amount) / (avg_amount or 1) > 0.10 for a in amounts):
-            continue
-
-        # Check date spacing
-        try:
-            dates = sorted(datetime.strptime(e["date"], "%Y-%m-%d") for e in entries)
-        except ValueError:
-            continue
-
-        gaps = [(dates[i + 1] - dates[i]).days for i in range(len(dates) - 1)]
-        avg_gap = sum(gaps) / len(gaps)
-
-        if 25 <= avg_gap <= 35:
-            frequency = "monthly"
-            day_of_month = dates[0].day
-        elif 6 <= avg_gap <= 8:
-            frequency = "weekly"
-            day_of_month = None
-        else:
-            continue
-
-        tx_type = "income" if entries[0]["amount"] > 0 else "expense"
-        item: Dict[str, Any] = {
-            "description": entries[0]["description"],
-            "type": tx_type,
-            "amount": round(avg_amount, 2),
-            "frequency": frequency,
-            "category": entries[0]["category"],
+    normalized_rows = [
+        {
+            "date": row.get("date"),
+            "amount": float(row.get("amount", 0) or 0),
+            "description": row.get("description") or "",
+            "category": row.get("category") or "general",
         }
-        if day_of_month is not None:
-            item["day_of_month"] = day_of_month
-
-        recurring.append(item)
+        for row in rows
+    ]
+    recurring = _detect_recurring_patterns(normalized_rows)
 
     return {"items": recurring, "recurring": recurring}
 
