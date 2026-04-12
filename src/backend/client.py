@@ -12,7 +12,7 @@ from typing import Any, Dict, Optional
 import httpx
 from fastapi import HTTPException
 
-logger = logging.getLogger("prism.gateway.client")
+logger = logging.getLogger("walletgo.gateway.client")
 
 # Populated by the lifespan context manager in main.py
 _client: Optional[httpx.AsyncClient] = None

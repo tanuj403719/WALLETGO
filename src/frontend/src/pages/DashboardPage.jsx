@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart } from 'recharts'
 import { FiChevronLeft, FiChevronRight, FiGrid, FiAlertTriangle, FiTarget, FiActivity, FiLogOut, FiMenu } from 'react-icons/fi'
@@ -91,8 +91,12 @@ export default function DashboardPage() {
   ]
 
   const liquidity = useMemo(() => computeLiquidityScore(minBalance), [minBalance])
+  const hasFetchedForecast = useRef(false)
 
   useEffect(() => {
+    if (hasFetchedForecast.current) return
+    hasFetchedForecast.current = true
+
     const loadForecast = async () => {
       setIsForecastLoading(true)
       try {

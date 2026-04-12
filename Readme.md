@@ -1,4 +1,4 @@
-# Prism — Personalized Liquidity Radar
+# WALLETGO — Personalized Liquidity Radar
 
 AI-powered financial forecasting tool that predicts your bank balance for the next 6 weeks with intelligent "what-if" scenario analysis.
 
@@ -49,7 +49,7 @@ SQLite    Prophet    GPT-4o-mini
 ## Project Structure
 
 ```
-Prism/
+WALLETGO/
 ├── scripts/
 │   └── start.sh                 # One-command startup (Mac/Linux)
 ├── src/
@@ -119,7 +119,7 @@ Prism/
 ```bash
 # 1. Clone
 git clone <repo-url>
-cd Prism
+cd WALLETGO
 
 # 2. Copy environment file
 cp .env.example .env
@@ -139,49 +139,43 @@ The script will:
 
 ### Windows
 
-> **Tip:** Use **PowerShell** or **Git Bash** (recommended). All commands below work in both.
+**Option A — Docker (recommended, no Python setup needed)**
 
-**Option A — Git Bash (recommended, mirrors the Mac experience)**
+Requires [Docker Desktop](https://www.docker.com/products/docker-desktop/).
 
-```bash
-cp .env.example .env
-bash scripts/start.sh
+```bat
+copy .env.example .env
+docker compose up --build
 ```
 
-**Option B — PowerShell (manual steps)**
+Then open http://localhost:3000.
+
+**Option B — PowerShell (manual)**  
+
+> Requires [Miniconda](https://docs.conda.io/en/latest/miniconda.html) — standard `pip install` fails on Windows for `prophet`.
 
 ```powershell
 # 1. Copy environment file
 Copy-Item .env.example .env
 
-# 2. Install Python dependencies
-pip install -r requirements.txt
+# 2. Create conda env and install dependencies
+conda create -n walletgo python=3.11 -y
+conda activate walletgo
+conda install -c conda-forge prophet pandas numpy -y
+pip install fastapi uvicorn pydantic python-dotenv httpx sqlalchemy openai email-validator PyJWT bcrypt python-dateutil
 
 # 3. Install frontend dependencies
-cd src\frontend
-npm install
-cd ..\..
+cd src\frontend; npm install; cd ..\..
 
-# 4. Open 5 separate PowerShell terminals and run one command in each:
+# 4. Start each service in a new window
+start cmd /k "conda activate walletgo && uvicorn main:app --host 0.0.0.0 --port 8003 --app-dir src/data-service"
+start cmd /k "conda activate walletgo && uvicorn main:app --host 0.0.0.0 --port 8001 --app-dir src/forecast-service"
+start cmd /k "conda activate walletgo && uvicorn main:app --host 0.0.0.0 --port 8002 --app-dir src/ai-service"
+start cmd /k "conda activate walletgo && uvicorn main:app --host 0.0.0.0 --port 8080 --app-dir src/backend"
 
-# Terminal 1 — Data Service
-uvicorn main:app --host 0.0.0.0 --port 8003 --app-dir src/data-service
-
-# Terminal 2 — Forecast Service
-uvicorn main:app --host 0.0.0.0 --port 8001 --app-dir src/forecast-service
-
-# Terminal 3 — AI Service
-uvicorn main:app --host 0.0.0.0 --port 8002 --app-dir src/ai-service
-
-# Terminal 4 — API Gateway
-uvicorn main:app --host 0.0.0.0 --port 8080 --app-dir src/backend
-
-# Terminal 5 — Frontend
-cd src\frontend
-npm run dev
+# 5. Start frontend
+cd src\frontend; npm run dev
 ```
-
-> **Note for Windows users:** If `uvicorn` is not found, use `python -m uvicorn ...` instead.
 
 ---
 
@@ -205,7 +199,7 @@ Copy `.env.example` to `.env`. The app runs fully offline without any variables 
 OPENAI_API_KEY=
 
 # ── JWT signing secret (change this before any real deployment) ───────
-JWT_SECRET=prism-hackathon-demo-secret-2024
+JWT_SECRET=walletgo-hackathon-demo-secret-2024
 
 # ── Internal service URLs (change only if you modify the ports) ───────
 FORECAST_SERVICE_URL=http://localhost:8001
@@ -213,7 +207,7 @@ AI_SERVICE_URL=http://localhost:8002
 DATA_SERVICE_URL=http://localhost:8003
 
 # ── Database path (SQLite file location) ─────────────────────────────
-DATABASE_PATH=prism.db
+DATABASE_PATH=walletgo.db
 ```
 
 ---

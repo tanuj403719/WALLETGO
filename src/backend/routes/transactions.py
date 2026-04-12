@@ -7,14 +7,31 @@ from __future__ import annotations
 
 import os
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 
-from client import forward
+from client import forward, get_client
 from deps import verify_token
 
 DATA_SERVICE_URL = os.getenv("DATA_SERVICE_URL", "http://localhost:8003")
 
 router = APIRouter(prefix="/api/transactions", tags=["transactions"])
+
+
+@router.post("/upload")
+async def upload_statement(
+    file: UploadFile = File(...),
+    user_id: str = Depends(verify_token),
+):
+    """Proxy a bank statement upload to the data-service."""
+    content = await file.read()
+    client = get_client()
+    response = await client.post(
+        f"{DATA_SERVICE_URL}/api/transactions/upload",
+        files={"file": (file.filename, content, file.content_type)},
+    )
+    if response.status_code >= 400:
+        raise HTTPException(status_code=response.status_code, detail=response.json())
+    return response.json()
 
 
 @router.get("/list")

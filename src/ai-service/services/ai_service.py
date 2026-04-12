@@ -22,7 +22,7 @@ from dotenv import load_dotenv
 _project_root = Path(__file__).resolve().parent.parent.parent.parent
 load_dotenv(_project_root / ".env")
 
-logger = logging.getLogger("prism.ai")
+logger = logging.getLogger("walletgo.ai")
 
 _api_key: Optional[str] = os.getenv("OPENAI_API_KEY")
 _client: Optional[object] = OpenAI(api_key=_api_key) if OpenAI and _api_key else None

@@ -3,6 +3,8 @@ import { motion } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 
+import StatementUploader from '../components/StatementUploader'
+
 export default function BankLinkingPage() {
   const [selected, setSelected] = useState(null)
   const navigate = useNavigate()
@@ -90,6 +92,25 @@ export default function BankLinkingPage() {
             </button>
           </motion.div>
         </div>
+
+        {/* Statement Upload */}
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.2 }}
+          className="mb-12"
+        >
+          <div className="glass-card p-8">
+            <h2 className="text-2xl font-bold mb-2">Or upload your bank statement</h2>
+            <p className="text-gray-600 mb-6">
+              Have a CSV or PDF export from your bank? Upload it directly to see a personalised forecast.
+            </p>
+            <StatementUploader onSuccess={() => navigate('/dashboard')} />
+            <div className="soft-panel mt-4 p-3 rounded-lg text-sm text-gray-600">
+              Supports NatWest, Monzo, Barclays, and most standard bank CSV exports
+            </div>
+          </div>
+        </motion.div>
 
         {/* Info Box */}
         <motion.div

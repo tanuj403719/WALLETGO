@@ -39,6 +39,13 @@ export const transactionAPI = {
     api.get(`/api/transactions/list?limit=${limit}&offset=${offset}`),
   getRecurring: () => api.get('/api/transactions/recurring'),
   getStats: () => api.get('/api/transactions/stats'),
+  uploadStatement: (file) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    return api.post('/api/transactions/upload', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+  },
 }
 
 // Auth API

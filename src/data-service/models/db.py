@@ -11,7 +11,7 @@ from datetime import datetime
 from sqlalchemy import Column, DateTime, Float, String, Text, create_engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
-DB_PATH = os.getenv("DATABASE_PATH", "prism.db")
+DB_PATH = os.getenv("DATABASE_PATH", "walletgo.db")
 DATABASE_URL = f"sqlite:///{DB_PATH}"
 
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
