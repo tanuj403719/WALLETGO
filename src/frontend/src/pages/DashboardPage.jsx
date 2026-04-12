@@ -256,6 +256,7 @@ export default function DashboardPage() {
 
   const currentTab = getCurrentTab(location.pathname)
   const liquidity = useMemo(() => computeLiquidityScore(minBalance), [minBalance])
+  const hasFetchedForecast = useRef(false)
   const isDark = theme === 'dark'
   const greenZoneStreak = useMemo(() => {
     let streak = 0
@@ -272,6 +273,9 @@ export default function DashboardPage() {
   }, [theme])
 
   useEffect(() => {
+    if (hasFetchedForecast.current) return
+    hasFetchedForecast.current = true
+
     const loadForecast = async () => {
       setIsForecastLoading(true)
       try {

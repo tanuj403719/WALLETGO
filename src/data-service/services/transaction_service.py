@@ -12,7 +12,7 @@ from typing import Any, Dict, List
 from models.db import SessionLocal, TransactionModel
 from services.auth_service import DEMO_USER_ID
 
-logger = logging.getLogger("prism.data.transactions")
+logger = logging.getLogger("walletgo.data.transactions")
 
 
 def get_transactions(limit: int = 100, offset: int = 0) -> Dict[str, Any]:

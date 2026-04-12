@@ -15,7 +15,7 @@ try:
 except Exception:  # pragma: no cover
     Prophet = None
 
-logger = logging.getLogger("prism.forecast")
+logger = logging.getLogger("walletgo.forecast")
 
 
 def _prepare_series(transactions: List[Dict]) -> pd.DataFrame:

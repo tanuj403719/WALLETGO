@@ -14,9 +14,9 @@ import jwt
 
 from models.db import SessionLocal, TransactionModel, UserModel
 
-logger = logging.getLogger("prism.data.auth")
+logger = logging.getLogger("walletgo.data.auth")
 
-JWT_SECRET = os.getenv("JWT_SECRET", "prism-hackathon-demo-secret-2024")
+JWT_SECRET = os.getenv("JWT_SECRET", "walletgo-hackathon-demo-secret-2024")
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRY_HOURS = 24
 

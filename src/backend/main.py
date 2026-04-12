@@ -1,6 +1,6 @@
 """
-Prism API Gateway
-=================
+WALLETGO API Gateway
+====================
 Single entry-point for the React frontend.  Fans out to downstream microservices
 via async HTTP.  JWT authentication is enforced here; downstream services trust
 the gateway and do not re-verify tokens.
@@ -31,7 +31,7 @@ from routes.scenarios import router as scenarios_router
 from routes.transactions import router as transactions_router
 
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("prism.gateway")
+logger = logging.getLogger("walletgo.gateway")
 
 FORECAST_SERVICE_URL = os.getenv("FORECAST_SERVICE_URL", "http://localhost:8001")
 AI_SERVICE_URL = os.getenv("AI_SERVICE_URL", "http://localhost:8002")
@@ -51,7 +51,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Prism API Gateway",
+    title="WALLETGO API Gateway",
     description="Single entry-point that fans out to forecast, AI, and data microservices.",
     version="1.0.0",
     lifespan=lifespan,
@@ -78,12 +78,12 @@ app.include_router(transactions_router)
 
 @app.get("/health")
 async def health_check() -> dict:
-    return {"status": "healthy", "service": "Prism API Gateway"}
+    return {"status": "healthy", "service": "WALLETGO API Gateway"}
 
 
 @app.get("/api/version")
 async def get_version() -> dict:
-    return {"version": "1.0.0", "name": "Prism API Gateway"}
+    return {"version": "1.0.0", "name": "WALLETGO API Gateway"}
 
 
 @app.get("/api/health/services")

@@ -4,6 +4,26 @@ import { motion } from 'framer-motion'
 import toast from 'react-hot-toast'
 import { useAuth } from '../context/AuthContext'
 
+function getErrorMessage(error) {
+  if (!error) return 'Authentication failed'
+  if (typeof error === 'string') return error
+  return error.message || error.error_description || 'Authentication failed'
+}
+
+function shouldFallbackToSignIn(errorMessage) {
+  const text = String(errorMessage || '').toLowerCase()
+  return (
+    text.includes('email rate limit exceeded') ||
+    text.includes('already registered') ||
+    text.includes('already exists') ||
+    text.includes('user already registered')
+  )
+}
+
+function isEmailNotConfirmed(errorMessage) {
+  return String(errorMessage || '').toLowerCase().includes('email not confirmed')
+}
+
 export default function SignInPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -34,25 +54,51 @@ export default function SignInPage() {
     try {
       if (email === 'demo@radar.com' && password === 'demo123') {
         await signInDemo()
-        toast.success('Demo account loaded')
+        toast.success('Demo account loaded', { id: 'auth-status' })
         navigate('/privacy')
         return
       }
 
       if (mode === 'signup') {
         const { error } = await signUp(email, password)
-        if (error) throw error
-        toast.success('Account created. Please review privacy terms.')
+        if (error) {
+          const message = getErrorMessage(error)
+          if (shouldFallbackToSignIn(message)) {
+            const signInAttempt = await signIn(email, password)
+            if (!signInAttempt.error) {
+              setMode('signin')
+              toast.success('Account already exists. Signed in successfully.', { id: 'auth-status' })
+              navigate('/privacy')
+              return
+            }
+            if (isEmailNotConfirmed(getErrorMessage(signInAttempt.error))) {
+              throw signInAttempt.error
+            }
+          }
+          throw error
+        }
+        toast.success('Account created. Please review privacy terms.', { id: 'auth-status' })
         navigate('/privacy')
         return
       }
 
       const { error } = await signIn(email, password)
       if (error) throw error
-      toast.success('Signed in successfully')
+      toast.success('Signed in successfully', { id: 'auth-status' })
       navigate('/privacy')
     } catch (error) {
-      toast.error(error?.message || 'Authentication failed')
+      const message = getErrorMessage(error)
+      if (message.toLowerCase().includes('email rate limit exceeded')) {
+        toast.error('Too many signup emails. Please use Sign in or try again in a few minutes.', {
+          id: 'auth-error',
+        })
+      } else if (isEmailNotConfirmed(message)) {
+        toast.error('Email not confirmed. Check your inbox and click the verification link, then sign in.', {
+          id: 'auth-error',
+        })
+      } else {
+        toast.error(message, { id: 'auth-error' })
+      }
     } finally {
       setIsLoading(false)
     }

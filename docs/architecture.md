@@ -1,8 +1,8 @@
-# Prism — Personalized Liquidity Radar
+# WALLETGO — Personalized Liquidity Radar
 
 ## Architecture Overview
 
-Prism uses a **microservices architecture** with a React frontend and four independent Python FastAPI backend services, all coordinated through a central API gateway.
+WALLETGO uses a **microservices architecture** with a React frontend and four independent Python FastAPI backend services, all coordinated through a central API gateway.
 
 ```
 ┌──────────────────────────────────────────────────────┐

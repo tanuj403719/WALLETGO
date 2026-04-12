@@ -1,6 +1,6 @@
 """
-Prism Data Service
-==================
+WALLETGO Data Service
+=====================
 Handles user authentication and transaction persistence using SQLite.
 All domain logic lives in services/; all HTTP handlers live in routes/.
 """
@@ -24,7 +24,7 @@ from routes.transactions import router as transactions_router
 from services.auth_service import seed_database
 
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("prism.data")
+logger = logging.getLogger("walletgo.data")
 
 
 @asynccontextmanager
@@ -36,7 +36,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Prism Data Service",
+    title="WALLETGO Data Service",
     description="Banking data and local persistence microservice (SQLite).",
     version="1.0.0",
     lifespan=lifespan,
@@ -48,4 +48,4 @@ app.include_router(transactions_router)
 
 @app.get("/health")
 async def health_check() -> dict:
-    return {"status": "healthy", "service": "Prism Data Service", "database": "sqlite"}
+    return {"status": "healthy", "service": "WALLETGO Data Service", "database": "sqlite"}
