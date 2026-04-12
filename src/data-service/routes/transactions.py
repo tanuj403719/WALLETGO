@@ -12,6 +12,7 @@ from fastapi import UploadFile, File, HTTPException
 from services.auth_service import DEMO_USER_ID
 from services.statement_parser import parse_statement, StatementParseError
 from services.transaction_service import (
+    clear_transactions,
     get_recurring_bills,
     get_stats,
     get_transaction_fingerprints,
@@ -73,6 +74,7 @@ async def recurring_bills(user_id: str = Query(default=DEMO_USER_ID)):
 async def upload_statement(
     file: UploadFile = File(...),
     user_id: str = Query(..., min_length=1),
+    replace_existing: bool = Query(default=False),
 ):
     """Parse an uploaded bank statement and merge net-new transactions for the user."""
     filename = file.filename or ""
@@ -91,7 +93,14 @@ async def upload_statement(
             detail={"message": str(e), "detected_headers": e.detected_headers},
         )
 
-    existing_fingerprints = get_transaction_fingerprints(user_id)
+    replaced_count = 0
+    if replace_existing:
+        replaced_count = len(get_transaction_fingerprints(user_id))
+        clear_transactions(user_id)
+        existing_fingerprints = set()
+    else:
+        existing_fingerprints = get_transaction_fingerprints(user_id)
+
     pending_rows = []
     preview = []
     for tx in transactions:
@@ -107,7 +116,10 @@ async def upload_statement(
     imported = insert_transactions(user_id=user_id, transactions=pending_rows)
 
     return {
+        "parsed_total": len(transactions),
         "imported": imported,
         "skipped_duplicates": len(transactions) - imported,
+        "replaced_existing": replace_existing,
+        "replaced_count": replaced_count,
         "preview": preview,
     }

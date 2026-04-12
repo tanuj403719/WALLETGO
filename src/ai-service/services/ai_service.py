@@ -114,7 +114,11 @@ def generate_explanation(forecast: Dict, language: str = "en") -> str:
         return _fallback_explanation(forecast, language)
 
 
-def extract_scenario_intent(user_input: str, language: str = "en") -> Dict:
+def extract_scenario_intent(
+    user_input: str,
+    language: str = "en",
+    transaction_context: Optional[Dict[str, Any]] = None,
+) -> Dict:
     """
     Parse free-form what-if text into structured financial events.
 
@@ -122,18 +126,29 @@ def extract_scenario_intent(user_input: str, language: str = "en") -> Dict:
     - type: one_time_spend | one_time_income | recurring_spend | recurring_income
     - amount: float
     - date_offset_days: int
+    - duration_days: int | null (optional, for temporary recurring effects)
     - description: str
     """
 
     if _client:
-        parsed = _extract_scenario_events_llm(user_input, language)
+        parsed = _extract_scenario_events_llm(user_input, language, transaction_context)
         if parsed:
             return parsed
 
-    return _extract_scenario_events_fallback(user_input, language)
+    fallback = _extract_scenario_events_fallback(user_input, language, transaction_context)
+    if _client:
+        fallback["fallback_reason"] = "gemini_request_failed_or_quota_exceeded"
+        fallback["model"] = _model_name
+    else:
+        fallback["fallback_reason"] = "gemini_not_configured"
+    return fallback
 
 
-def _extract_scenario_events_llm(user_input: str, language: str) -> Optional[Dict[str, Any]]:
+def _extract_scenario_events_llm(
+    user_input: str,
+    language: str,
+    transaction_context: Optional[Dict[str, Any]] = None,
+) -> Optional[Dict[str, Any]]:
     """Use LLM JSON mode to extract scenario events."""
     assert _client is not None
     system_prompt = (
@@ -142,15 +157,18 @@ def _extract_scenario_events_llm(user_input: str, language: str) -> Optional[Dic
         "Each events item must include: "
         "type (one_time_spend|one_time_income|recurring_spend|recurring_income), "
         "amount (float > 0), date_offset_days (int >= 0), description (string). "
+        "Optional: duration_days (int > 0) for temporary recurring events. "
         "Interpret relative dates from today. If unspecified, use 0. "
         "If weekly recurring, encode monthly-equivalent amount when possible. "
+        "Use transaction_context if provided to estimate realistic amounts when user omits numbers. "
+        "For temporary spend cuts (for N days/weeks), prefer recurring_income with duration_days. "
         "Never return markdown."
     )
 
     try:
         prompt = (
             f"{system_prompt}\n"
-            f"Input JSON: {json.dumps({'language': language, 'text': user_input}, ensure_ascii=False)}"
+            f"Input JSON: {json.dumps({'language': language, 'text': user_input, 'transaction_context': transaction_context or {}}, ensure_ascii=False)}"
         )
         response = _client.generate_content(
             prompt,
@@ -172,6 +190,8 @@ def _extract_scenario_events_llm(user_input: str, language: str) -> Optional[Dic
             "events": events,
             "description": user_input,
             "language": language,
+            "parser": "gemini",
+            "model": _model_name,
         }
     except Exception:
         logger.exception("LLM scenario extraction failed; using fallback parser")
@@ -212,12 +232,23 @@ def _sanitize_events(raw_events: Any, raw_text: str) -> List[Dict[str, Any]]:
             date_offset_days = 0
         date_offset_days = max(date_offset_days, 0)
 
+        raw_duration_days = item.get("duration_days")
+        duration_days = None
+        if raw_duration_days is not None:
+            try:
+                parsed_duration = int(raw_duration_days)
+                if parsed_duration > 0:
+                    duration_days = parsed_duration
+            except (TypeError, ValueError):
+                duration_days = None
+
         description = str(item.get("description") or raw_text).strip() or raw_text
         sanitized.append(
             {
                 "type": event_type,
                 "amount": round(amount, 2),
                 "date_offset_days": date_offset_days,
+                "duration_days": duration_days,
                 "description": description,
             }
         )
@@ -225,7 +256,60 @@ def _sanitize_events(raw_events: Any, raw_text: str) -> List[Dict[str, Any]]:
     return sanitized
 
 
-def _extract_scenario_events_fallback(user_input: str, language: str) -> Dict[str, Any]:
+def _extract_duration_days(normalized_text: str) -> Optional[int]:
+    days_match = re.search(r"for\s+([0-9]{1,3})\s+days?", normalized_text)
+    if days_match:
+        return max(int(days_match.group(1)), 1)
+
+    weeks_match = re.search(r"for\s+([0-9]{1,2})\s+weeks?", normalized_text)
+    if weeks_match:
+        return max(int(weeks_match.group(1)) * 7, 1)
+
+    return None
+
+
+def _looks_like_spend_reduction(normalized_text: str) -> bool:
+    reduction_terms = ["don't", "dont", "no", "skip", "avoid", "cut", "reduce", "stop"]
+    spend_terms = ["shop", "shopping", "spend", "coffee", "food", "dining", "subscription"]
+    return any(term in normalized_text for term in reduction_terms) and any(
+        term in normalized_text for term in spend_terms
+    )
+
+
+def _context_daily_spend(transaction_context: Optional[Dict[str, Any]]) -> float:
+    if not isinstance(transaction_context, dict):
+        return 60.0
+    try:
+        value = float(transaction_context.get("median_daily_spend", 60.0) or 60.0)
+    except (TypeError, ValueError):
+        value = 60.0
+    return max(10.0, min(250.0, value))
+
+
+def _estimate_cut_daily_amount(normalized_text: str, transaction_context: Optional[Dict[str, Any]]) -> float:
+    explicit = re.search(r"(?:\$|₹)?\s*([0-9]+(?:\.[0-9]+)?)\s*(?:/|per)\s*day", normalized_text)
+    if explicit:
+        return max(5.0, min(200.0, float(explicit.group(1))))
+
+    baseline = _context_daily_spend(transaction_context)
+    multiplier = 0.30
+    if any(k in normalized_text for k in ["coffee", "tea", "cafe"]):
+        multiplier = 0.10
+    elif any(k in normalized_text for k in ["subscription", "netflix", "spotify", "prime"]):
+        multiplier = 0.12
+    elif any(k in normalized_text for k in ["food", "dining", "restaurant"]):
+        multiplier = 0.20
+    elif any(k in normalized_text for k in ["shop", "shopping", "amazon", "flipkart"]):
+        multiplier = 0.35
+
+    return max(8.0, min(150.0, round(baseline * multiplier, 2)))
+
+
+def _extract_scenario_events_fallback(
+    user_input: str,
+    language: str,
+    transaction_context: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     """Regex/date-keyword fallback extraction for one or more events."""
     splitter = r"\b(?:but|and|also|plus)\b"
     original_clauses = [c.strip() for c in re.split(splitter, user_input, flags=re.IGNORECASE) if c.strip()]
@@ -234,9 +318,29 @@ def _extract_scenario_events_fallback(user_input: str, language: str) -> Dict[st
     events: List[Dict[str, Any]] = []
     for original_clause, normalized in zip(original_clauses, normalized_clauses):
         amount_match = re.search(r"(?:[$₹]\s*)?([0-9][0-9,]*(?:\.[0-9]+)?)", normalized)
-        if not amount_match:
+        amount = 0.0
+        if amount_match:
+            suffix = normalized[amount_match.end() : amount_match.end() + 16]
+            # Avoid treating duration counts like "10 days" as money amounts.
+            looks_like_duration_number = bool(re.match(r"\s*(day|days|week|weeks|month|months)\b", suffix))
+            if not looks_like_duration_number:
+                amount = float(amount_match.group(1).replace(",", ""))
+
+        if amount <= 0 and _looks_like_spend_reduction(normalized):
+            duration_days = _extract_duration_days(normalized) or 14
+            daily_cut = _estimate_cut_daily_amount(normalized, transaction_context)
+            monthly_equivalent = round(daily_cut * 30.5, 2)
+            events.append(
+                {
+                    "type": "recurring_income",
+                    "amount": monthly_equivalent,
+                    "date_offset_days": _extract_offset_days(normalized),
+                    "duration_days": duration_days,
+                    "description": original_clause,
+                }
+            )
             continue
-        amount = float(amount_match.group(1).replace(",", ""))
+
         if amount <= 0:
             continue
 
@@ -263,6 +367,7 @@ def _extract_scenario_events_fallback(user_input: str, language: str) -> Dict[st
                 "type": event_type,
                 "amount": round(abs(amount), 2),
                 "date_offset_days": _extract_offset_days(normalized),
+                "duration_days": _extract_duration_days(normalized) if event_type.startswith("recurring") else None,
                 "description": original_clause,
             }
         )
@@ -281,6 +386,7 @@ def _extract_scenario_events_fallback(user_input: str, language: str) -> Dict[st
         "events": [event for event in events if event.get("amount", 0.0) > 0],
         "description": user_input,
         "language": language,
+        "parser": "fallback",
     }
 
 
@@ -313,22 +419,66 @@ def generate_scenario_explanation(
     if not likely:
         return _fallback_explanation(original_forecast, language)
 
-    minimum_point = min(likely, key=lambda item: item.get("balance", 0))
-    balance = round(float(minimum_point.get("balance", 0)), 2)
+    def _row_balance(row: Dict[str, Any]) -> float:
+        return float(row.get("predicted_balance", row.get("balance", 0.0)) or 0.0)
+
+    minimum_point = min(likely, key=_row_balance)
+    balance = round(_row_balance(minimum_point), 2)
     date = minimum_point.get("date", "the forecast window")
+
+    base_likely = original_forecast.get("forecast_data", [])
+    base_min = 0.0
+    if base_likely:
+        base_min = round(min(_row_balance(row) for row in base_likely), 2)
+
+    scenario_end = round(_row_balance(likely[-1]), 2) if likely else 0.0
+    base_end = round(_row_balance(base_likely[-1]), 2) if base_likely else 0.0
+
+    min_delta = round(balance - base_min, 2)
+    end_delta = round(scenario_end - base_end, 2)
+    direction_min = "improves" if min_delta >= 0 else "worsens"
+
+    if _client:
+        try:
+            summary = {
+                "language": language,
+                "scenario_min_balance": balance,
+                "scenario_min_balance_date": date,
+                "base_min_balance": base_min,
+                "min_balance_delta": min_delta,
+                "scenario_end_balance": scenario_end,
+                "base_end_balance": base_end,
+                "end_balance_delta": end_delta,
+                "events": scenario_results.get("events", []),
+            }
+            prompt = (
+                "You explain personal finance what-if outcomes with concrete numbers, no fluff. "
+                f"Reply in {_language_name(language)}. "
+                "Use these facts and explain impact in 2-3 sentences, including what changed vs base forecast: "
+                f"{json.dumps(summary, ensure_ascii=False)}"
+            )
+            response = _client.generate_content(
+                prompt,
+                generation_config=GenerationConfig(temperature=0.2),
+            )
+            content = _extract_text(response)
+            if content:
+                return content
+        except Exception:
+            logger.exception("LLM scenario explanation failed; using deterministic fallback")
 
     if language == "hinglish":
         return (
-            f"Agar yeh scenario apply karte ho, toh {date} tak likely balance ${balance} tak ja sakta hai. "
-            f"Low aur high range ke beech ka gap uncertainty dikhata hai."
+            f"Is scenario mein minimum balance {date} ko ${balance} aata hai, jo base se ${abs(min_delta)} {direction_min} karta hai. "
+            f"Forecast window ke end tak net impact लगभग ${end_delta} hai."
         )
     if language == "hi":
         return (
-            f"यदि यह scenario लागू करते हैं, तो {date} तक likely balance लगभग ${balance} हो सकता है। "
-            f"Low और high range के बीच का gap uncertainty दिखाता है।"
+            f"इस scenario में न्यूनतम बैलेंस {date} को ${balance} है, जो base की तुलना में ${abs(min_delta)} {direction_min} करता है। "
+            f"Forecast window के अंत तक कुल प्रभाव लगभग ${end_delta} है।"
         )
 
     return (
-        f"With this scenario, the likely balance could reach about ${balance} by {date}. "
-        f"The spread between low and high outcomes shows how much uncertainty remains."
+        f"Under this scenario, the minimum likely balance is about ${balance} on {date}, which {direction_min} the base-case minimum by ${abs(min_delta)}. "
+        f"By the end of the forecast window, net impact versus base is about ${end_delta}."
     )

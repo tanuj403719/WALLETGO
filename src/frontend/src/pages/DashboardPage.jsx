@@ -5,6 +5,7 @@ import {
   Area,
   AreaChart,
   CartesianGrid,
+  Legend,
   Line,
   ReferenceDot,
   ResponsiveContainer,
@@ -66,6 +67,10 @@ function toNumber(value, fallback = 0) {
   return Number.isFinite(parsed) ? parsed : fallback
 }
 
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value))
+}
+
 function normalizeForecastRows(rows) {
   if (!Array.isArray(rows) || rows.length === 0) {
     return DEFAULT_FORECAST
@@ -91,10 +96,39 @@ function normalizeForecastRows(rows) {
   })
 }
 
-function computeLiquidityScore(minBalance) {
-  if (minBalance >= 2500) return { score: 88, label: 'Smooth sailing for 6 weeks', tone: 'text-emerald-700' }
-  if (minBalance >= 1000) return { score: 68, label: 'Caution: Tight spot ahead', tone: 'text-amber-700' }
-  return { score: 38, label: 'Action needed this week', tone: 'text-red-700' }
+function computeLiquidityScore(rows, alertBuffer = 500) {
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return { score: 50, label: 'Insufficient forecast data', tone: 'text-slate-700' }
+  }
+
+  const balances = rows.map((row) => toNumber(row.balance, 0))
+  const minBalance = Math.min(...balances)
+
+  const deltas = balances
+    .slice(1)
+    .map((balance, idx) => balance - balances[idx])
+  const meanDelta = deltas.length
+    ? deltas.reduce((sum, value) => sum + value, 0) / deltas.length
+    : 0
+  const variance = deltas.length
+    ? deltas.reduce((sum, value) => sum + (value - meanDelta) ** 2, 0) / deltas.length
+    : 0
+  const volatility = Math.sqrt(variance)
+
+  const safeDaysRatio = rows.length
+    ? rows.filter((row) => toNumber(row.balance, 0) >= alertBuffer).length / rows.length
+    : 0
+
+  // Blend solvency floor, consistency, and cushion days into a continuous 0-100 score.
+  const floorScore = clamp(((minBalance + 2000) / 8000) * 100, 0, 100)
+  const stabilityScore = 100 - clamp((volatility / 700) * 100, 0, 100)
+  const bufferScore = clamp(safeDaysRatio * 100, 0, 100)
+
+  const score = Math.round(clamp((floorScore * 0.55) + (bufferScore * 0.25) + (stabilityScore * 0.2), 0, 100))
+
+  if (score >= 80) return { score, label: 'Smooth sailing for 6 weeks', tone: 'text-emerald-700' }
+  if (score >= 60) return { score, label: 'Caution: Tight spot ahead', tone: 'text-amber-700' }
+  return { score, label: 'Action needed this week', tone: 'text-red-700' }
 }
 
 function getCurrentTab(pathname) {
@@ -111,8 +145,10 @@ function formatMoney(value, currencyCode = 'USD') {
   return `${symbol}${Math.round(value).toLocaleString()}`
 }
 
-function getTimelineEvent(dateLabel) {
-  const day = Number.parseInt((dateLabel || '').split(' ')[0], 10)
+function getTimelineEvent(rawDate) {
+  const parsed = new Date(rawDate)
+  if (Number.isNaN(parsed.getTime())) return null
+  const day = parsed.getDate()
   if (day === 5) return { emoji: '💰', label: 'Payday' }
   if (day === 1) return { emoji: '📅', label: 'Rent' }
   if (day === 10) return { emoji: '🎬', label: 'Subscription' }
@@ -260,7 +296,10 @@ export default function DashboardPage() {
   const contentContainerClass = currentTab === 'forecast' || currentTab === 'settings'
     ? 'w-full max-w-[1600px] mx-auto p-4 md:p-8'
     : 'max-w-7xl mx-auto p-4 md:p-8'
-  const liquidity = useMemo(() => computeLiquidityScore(minBalance), [minBalance])
+  const liquidity = useMemo(
+    () => computeLiquidityScore(forecastRows, alertBuffer),
+    [forecastRows, alertBuffer]
+  )
   const hasFetchedForecast = useRef(false)
   const isDark = theme === 'dark'
   const greenZoneStreak = useMemo(() => {
@@ -351,8 +390,9 @@ export default function DashboardPage() {
   }, [fetchForecast, hasTransactions, isAuthenticated, isTransactionCheckLoading])
 
   const handleStatementUploaded = useCallback(async () => {
-    if (!isAuthenticated) return
-    setHasTransactions(true)
+    if (isAuthenticated) {
+      setHasTransactions(true)
+    }
     hasFetchedForecast.current = false
     await fetchForecast()
   }, [fetchForecast, isAuthenticated])
@@ -378,10 +418,75 @@ export default function DashboardPage() {
         scenarioHigh: highByDate ?? highByIndex ?? row.balance,
         inflows: Math.max(0, row.balance - toNumber(forecastRows[idx - 1]?.balance, row.balance)),
         outflows: Math.max(0, toNumber(forecastRows[idx - 1]?.balance, row.balance) - row.balance),
-        marker: getTimelineEvent(row.date),
+        marker: getTimelineEvent(row.rawDate),
       }
     })
   }, [forecastRows, scenarioRows])
+
+  const plottedEvents = useMemo(
+    () => scenarioData
+      .filter((row) => row.marker)
+      .map((row) => ({
+        key: `${row.rawDate}-${row.marker.label}`,
+        date: row.date,
+        balance: row.balance,
+        marker: row.marker,
+      })),
+    [scenarioData]
+  )
+
+  const forecastHighlights = useMemo(() => {
+    const byLabel = new Map()
+    plottedEvents.forEach((event) => {
+      if (!byLabel.has(event.marker.label)) {
+        byLabel.set(event.marker.label, event)
+      }
+    })
+
+    return [
+      byLabel.get('Payday') || { marker: { emoji: '💰', label: 'Payday' }, date: 'N/A' },
+      byLabel.get('Rent') || { marker: { emoji: '📅', label: 'Rent Debited' }, date: 'N/A' },
+      byLabel.get('Subscription') || { marker: { emoji: '🎬', label: 'Subscriptions' }, date: 'N/A' },
+    ]
+  }, [plottedEvents])
+
+  const chartLegendPayload = useMemo(() => {
+    const payload = [
+      { value: 'Projected Balance', type: 'line', id: 'balance', color: '#2563eb' },
+    ]
+
+    if (isScenarioActive) {
+      payload.push(
+        { value: 'Scenario Low', type: 'line', id: 'scenarioLow', color: '#ef4444' },
+        { value: 'Scenario Likely', type: 'line', id: 'scenarioLikely', color: isDark ? '#e2e8f0' : '#111827' },
+        { value: 'Scenario High', type: 'line', id: 'scenarioHigh', color: '#16a34a' },
+      )
+    }
+
+    if (showBaseline) {
+      payload.push({ value: 'Baseline', type: 'line', id: 'baseline', color: '#9ca3af' })
+    }
+
+    return payload
+  }, [isDark, isScenarioActive, showBaseline])
+
+  const scenarioPlotDomain = useMemo(() => {
+    if (!scenarioData.length) {
+      return ['auto', 'auto']
+    }
+
+    const values = scenarioData.flatMap((row) => [
+      toNumber(row.balance, 0),
+      toNumber(row.scenarioLow, 0),
+      toNumber(row.scenarioLikely, 0),
+      toNumber(row.scenarioHigh, 0),
+    ])
+    const minValue = Math.min(...values)
+    const maxValue = Math.max(...values)
+    const pad = Math.max(120, (maxValue - minValue) * 0.18)
+
+    return [Math.floor(minValue - pad), Math.ceil(maxValue + pad)]
+  }, [scenarioData])
 
   const handleSignOut = async () => {
     await signOut()
@@ -425,12 +530,14 @@ export default function DashboardPage() {
 
   const renderOverview = () => (
     <div className="space-y-6">
-      {isAuthenticated && hasTransactions && (
+      {(!isAuthenticated || hasTransactions) && (
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="glass-card p-6">
           <div className="mb-4">
-            <h2 className="text-xl font-bold text-slate-900">Upload More Statements</h2>
+            <h2 className="text-xl font-bold text-slate-900">Upload Statement</h2>
             <p className="text-sm text-slate-600 mt-1">
-              Add another CSV or PDF anytime to keep your forecast and stats updated.
+              {isAuthenticated
+                ? 'Add another CSV or PDF anytime to keep your forecast and stats updated.'
+                : 'Upload a CSV or PDF in demo mode and regenerate your forecast from parsed statement transactions.'}
             </p>
           </div>
           <StatementUploader onSuccess={handleStatementUploaded} />
@@ -549,6 +656,11 @@ export default function DashboardPage() {
             <Tooltip
               content={<ForecastTooltip currency={currency} />}
             />
+            <Legend
+              payload={chartLegendPayload}
+              iconType="line"
+              wrapperStyle={{ fontSize: '12px', color: isDark ? '#cbd5e1' : '#475569' }}
+            />
             <Area type="monotone" dataKey="balance" stroke="#2563eb" strokeWidth={3} fillOpacity={1} fill="url(#colorBalance)" />
             {scenarioData.map((row) =>
               row.marker ? (
@@ -556,7 +668,7 @@ export default function DashboardPage() {
                   key={`${row.date}-${row.marker.label}`}
                   x={row.date}
                   y={row.balance}
-                  r={5}
+                  r={6}
                   fill="#0ea5e9"
                   stroke="#ffffff"
                   label={{ value: row.marker.emoji, position: 'top', fontSize: 14 }}
@@ -579,9 +691,9 @@ export default function DashboardPage() {
       </div>
 
       <div className="grid md:grid-cols-3 gap-4 text-sm w-full">
-        <div className="soft-panel px-4 py-3 font-medium text-slate-800">💰 Payday: May 5</div>
-        <div className="soft-panel px-4 py-3 font-medium text-slate-800">📅 Rent Debited: May 1</div>
-        <div className="soft-panel px-4 py-3 font-medium text-slate-800">🎬 Subscriptions: May 10</div>
+        <div className="soft-panel px-4 py-3 font-medium text-slate-800">{forecastHighlights[0].marker.emoji} {forecastHighlights[0].marker.label}: {forecastHighlights[0].date}</div>
+        <div className="soft-panel px-4 py-3 font-medium text-slate-800">{forecastHighlights[1].marker.emoji} {forecastHighlights[1].marker.label}: {forecastHighlights[1].date}</div>
+        <div className="soft-panel px-4 py-3 font-medium text-slate-800">{forecastHighlights[2].marker.emoji} {forecastHighlights[2].marker.label}: {forecastHighlights[2].date}</div>
       </div>
     </motion.div>
   )
@@ -625,6 +737,58 @@ export default function DashboardPage() {
         </button>
 
         <p className="sandbox-note mt-5 text-sm text-gray-700">{scenarioNote}</p>
+
+        <div className="mt-5 rounded-xl border border-slate-700/40 bg-slate-950/30 p-4">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-xs uppercase tracking-[0.14em] text-slate-300">Scenario Plot</p>
+            {isScenarioActive && <span className="text-xs text-slate-300">Low / Likely / High vs Projected</span>}
+          </div>
+
+          {isScenarioActive ? (
+            <ResponsiveContainer width="100%" height={260}>
+              <AreaChart data={scenarioData}>
+                <CartesianGrid strokeDasharray="3 3" stroke={isDark ? 'rgba(148,163,184,0.22)' : '#e2e8f0'} />
+                <XAxis dataKey="date" stroke={isDark ? '#cbd5e1' : '#475569'} />
+                <YAxis stroke={isDark ? '#cbd5e1' : '#475569'} domain={scenarioPlotDomain} />
+                <Tooltip content={<ForecastTooltip currency={currency} />} />
+                <Legend
+                  payload={chartLegendPayload}
+                  iconType="line"
+                  wrapperStyle={{ fontSize: '12px', color: isDark ? '#cbd5e1' : '#475569' }}
+                />
+                <Area type="monotone" dataKey="balance" stroke="#2563eb" strokeWidth={1.8} strokeDasharray="6 4" fillOpacity={0.05} fill="#2563eb" />
+                <Line
+                  type="monotone"
+                  dataKey="scenarioLow"
+                  stroke="#ef4444"
+                  strokeWidth={3.2}
+                  dot={{ r: 2.4, fill: '#ef4444', stroke: '#fff', strokeWidth: 0.8 }}
+                  activeDot={{ r: 4 }}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="scenarioLikely"
+                  stroke={isDark ? '#f8fafc' : '#111827'}
+                  strokeWidth={3.6}
+                  dot={{ r: 2.4, fill: isDark ? '#f8fafc' : '#111827', stroke: '#60a5fa', strokeWidth: 0.8 }}
+                  activeDot={{ r: 4.2 }}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="scenarioHigh"
+                  stroke="#22c55e"
+                  strokeWidth={3.2}
+                  dot={{ r: 2.4, fill: '#22c55e', stroke: '#fff', strokeWidth: 0.8 }}
+                  activeDot={{ r: 4 }}
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          ) : (
+            <p className="text-sm text-slate-400">
+              Run a scenario to generate the comparison plot here.
+            </p>
+          )}
+        </div>
 
         <div className="soft-panel mt-5 rounded-xl p-4">
           <p className="text-xs uppercase tracking-[0.12em] text-slate-500 mb-2">How To Use</p>

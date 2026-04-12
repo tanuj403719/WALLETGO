@@ -35,13 +35,14 @@ async def parse_statement_only(file: UploadFile = File(...)):
 async def upload_statement(
     file: UploadFile = File(...),
     user_id: str = Depends(verify_token),
+    replace_existing: bool = False,
 ):
     """Proxy a bank statement upload to the data-service."""
     content = await file.read()
     client = get_client()
     response = await client.post(
         f"{DATA_SERVICE_URL}/api/transactions/upload",
-        params={"user_id": user_id},
+        params={"user_id": user_id, "replace_existing": replace_existing},
         files={"file": (file.filename, content, file.content_type)},
     )
     if response.status_code >= 400:

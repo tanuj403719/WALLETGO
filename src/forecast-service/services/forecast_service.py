@@ -19,6 +19,10 @@ except Exception:  # pragma: no cover
 
 logger = logging.getLogger("walletgo.forecast")
 
+# Prophet becomes unstable on short daily histories extracted from single statements.
+MIN_HISTORY_DAYS_FOR_BLEND = 30
+MIN_HISTORY_DAYS_FOR_PROPHET = 90
+
 
 def _safe_float(value: object, default: float = 0.0) -> float:
     """Convert numeric-ish values to float while guarding against NaN/None."""
@@ -219,19 +223,84 @@ def _build_discretionary_fallback(
     return pd.DataFrame(rows)
 
 
+def _blend_discretionary_predictions(
+    prophet_prediction: pd.DataFrame,
+    fallback_prediction: pd.DataFrame,
+    history_days: int,
+) -> pd.DataFrame:
+    """Blend Prophet and fallback daily flows for medium-length histories."""
+    if prophet_prediction.empty:
+        return fallback_prediction
+    if fallback_prediction.empty:
+        return prophet_prediction
+
+    left = prophet_prediction[["ds", "yhat", "yhat_lower", "yhat_upper"]].copy()
+    right = fallback_prediction[["ds", "yhat", "yhat_lower", "yhat_upper"]].copy()
+    merged = left.merge(right, on="ds", suffixes=("_prophet", "_fallback"))
+    if merged.empty:
+        return fallback_prediction
+
+    if MIN_HISTORY_DAYS_FOR_PROPHET <= MIN_HISTORY_DAYS_FOR_BLEND:
+        prophet_weight = 0.35
+    else:
+        progress = (history_days - MIN_HISTORY_DAYS_FOR_BLEND) / (MIN_HISTORY_DAYS_FOR_PROPHET - MIN_HISTORY_DAYS_FOR_BLEND)
+        prophet_weight = 0.25 + (max(0.0, min(1.0, progress)) * 0.4)
+
+    fallback_weight = 1.0 - prophet_weight
+
+    blended = pd.DataFrame({"ds": merged["ds"]})
+    for key in ["yhat", "yhat_lower", "yhat_upper"]:
+        blended[key] = (
+            merged[f"{key}_prophet"] * prophet_weight
+            + merged[f"{key}_fallback"] * fallback_weight
+        )
+    return blended
+
+
+def _compute_confidence(
+    model_type: str,
+    recent_volatility: float,
+    history_days: int,
+    recurring_count: int,
+) -> float:
+    """Compute confidence using model tier + volatility + history depth."""
+    volatility_penalty = min(30.0, recent_volatility / 25.0)
+    recurring_bonus = min(6.0, recurring_count * 0.5)
+
+    if model_type == "fallback-hybrid":
+        confidence = 48.0 + min(12.0, history_days / 3.0) - volatility_penalty + (recurring_bonus * 0.4)
+        return max(35.0, min(78.0, confidence))
+
+    if model_type == "blended-hybrid":
+        confidence = 58.0 + min(18.0, max(0.0, history_days - MIN_HISTORY_DAYS_FOR_BLEND) * 0.6)
+        confidence = confidence - (volatility_penalty * 0.85) + recurring_bonus
+        return max(45.0, min(88.0, confidence))
+
+    confidence = 72.0 + min(20.0, max(0.0, history_days - MIN_HISTORY_DAYS_FOR_PROPHET) * 0.25)
+    confidence = confidence - (volatility_penalty * 0.75) + recurring_bonus
+    return max(55.0, min(95.0, confidence))
+
+
 def _predict_discretionary_flow(
     discretionary_daily: pd.DataFrame,
     days: int,
-) -> Tuple[pd.DataFrame, bool]:
+) -> Tuple[pd.DataFrame, str]:
     """Predict discretionary daily net cashflow using Prophet, with fallback."""
     if Prophet is None or len(discretionary_daily) < 2:
-        return _build_discretionary_fallback(discretionary_daily, days), True
+        return _build_discretionary_fallback(discretionary_daily, days), "fallback-hybrid"
 
     history = discretionary_daily.rename(columns={"amount": "y"})[["ds", "y"]].copy()
     history["y"] = pd.to_numeric(history["y"], errors="coerce")
     history = history.dropna(subset=["y"])
     if len(history) < 2:
-        return _build_discretionary_fallback(discretionary_daily, days), True
+        return _build_discretionary_fallback(discretionary_daily, days), "fallback-hybrid"
+
+    history_days = len(history)
+    fallback_prediction = _build_discretionary_fallback(discretionary_daily, days)
+
+    # Very short samples remain on heuristic mode.
+    if history_days < MIN_HISTORY_DAYS_FOR_BLEND:
+        return fallback_prediction, "fallback-hybrid"
 
     model = Prophet(
         interval_width=0.8,
@@ -244,12 +313,23 @@ def _predict_discretionary_flow(
     try:
         model.fit(history[["ds", "y"]])
         future = model.make_future_dataframe(periods=days, freq="D")
-        prediction = model.predict(future).tail(days)
+        prediction = model.predict(future).tail(days)[["ds", "yhat", "yhat_lower", "yhat_upper"]].reset_index(drop=True)
+
+        history_mean = _safe_float(history["y"].mean(), 0.0)
+        history_std = _safe_float(history["y"].std(ddof=0), 0.0)
+        flow_cap = max(200.0, (abs(history_mean) * 1.5) + (history_std * 4.0))
+        prediction["yhat"] = prediction["yhat"].clip(-flow_cap, flow_cap)
+        prediction["yhat_lower"] = prediction["yhat_lower"].clip(-(flow_cap * 1.4), flow_cap * 1.4)
+        prediction["yhat_upper"] = prediction["yhat_upper"].clip(-(flow_cap * 1.4), flow_cap * 1.4)
     except Exception:
         logger.exception("Prophet fit/predict failed, falling back to heuristic flow model")
-        return _build_discretionary_fallback(discretionary_daily, days), True
+        return fallback_prediction, "fallback-hybrid"
 
-    return prediction[["ds", "yhat", "yhat_lower", "yhat_upper"]].reset_index(drop=True), False
+    if history_days < MIN_HISTORY_DAYS_FOR_PROPHET:
+        blended_prediction = _blend_discretionary_predictions(prediction, fallback_prediction, history_days)
+        return blended_prediction, "blended-hybrid"
+
+    return prediction, "prophet-hybrid"
 
 
 def _compose_balance_forecast_rows(
@@ -315,8 +395,21 @@ def generate_forecast(
     discretionary_daily = daily_total.copy()
     discretionary_daily["amount"] = daily_total["amount"].to_numpy() - daily_recurring["amount"].to_numpy()
 
-    predicted_discretionary, used_fallback = _predict_discretionary_flow(discretionary_daily, days)
+    predicted_discretionary, model_type = _predict_discretionary_flow(discretionary_daily, days)
     forecast_rows = _compose_balance_forecast_rows(predicted_discretionary, recurring_patterns, starting_balance)
+
+    # Guardrail: if blended output is unrealistically pessimistic versus heuristic baseline,
+    # fall back to the heuristic forecast for stability.
+    if model_type == "blended-hybrid" and forecast_rows:
+        fallback_prediction = _build_discretionary_fallback(discretionary_daily, days)
+        fallback_rows = _compose_balance_forecast_rows(fallback_prediction, recurring_patterns, starting_balance)
+        if fallback_rows:
+            blended_min = min(item.get("predicted_balance", item.get("balance", 0.0)) for item in forecast_rows)
+            fallback_min = min(item.get("predicted_balance", item.get("balance", 0.0)) for item in fallback_rows)
+            tolerance = max(1200.0, abs(fallback_min) * 0.35)
+            if blended_min < (fallback_min - tolerance):
+                forecast_rows = fallback_rows
+                model_type = "fallback-hybrid"
 
     if not forecast_rows:
         forecast_rows = _compose_balance_forecast_rows(
@@ -324,19 +417,20 @@ def generate_forecast(
             recurring_patterns,
             starting_balance,
         )
-        used_fallback = True
+        model_type = "fallback-hybrid"
 
     min_point = min(forecast_rows, key=lambda item: item.get("predicted_balance", item.get("balance", 0.0)))
     recent_volatility = _safe_float(discretionary_daily["amount"].tail(30).std(ddof=0), 0.0)
-    if len(discretionary_daily) < 2:
+    history_days = len(discretionary_daily)
+    if history_days < 2:
         confidence = 15.0
-    elif used_fallback:
-        confidence = max(20.0, 55.0 - (recent_volatility / 20.0))
     else:
-        confidence = 92.0 - (recent_volatility / 25.0)
-        if recurring_patterns:
-            confidence += min(4.0, len(recurring_patterns) * 0.6)
-        confidence = max(45.0, min(95.0, confidence))
+        confidence = _compute_confidence(
+            model_type=model_type,
+            recent_volatility=recent_volatility,
+            history_days=history_days,
+            recurring_count=len(recurring_patterns),
+        )
 
     return {
         "forecast_data": forecast_rows,
@@ -344,7 +438,7 @@ def generate_forecast(
         "min_balance": min_point.get("predicted_balance", min_point.get("balance", 0.0)),
         "min_balance_date": min_point["date"],
         "starting_balance": starting_balance,
-        "model": "fallback-hybrid" if used_fallback else "prophet-hybrid",
+        "model": model_type,
     }
 
 
@@ -357,6 +451,7 @@ def run_scenario(base_forecast: Dict, scenario_events: List[Dict] | Dict) -> Tup
       "type": "one_time_spend"|"one_time_income"|"recurring_spend"|"recurring_income",
       "amount": float,
       "date_offset_days": int,
+            "duration_days": int | null,
       "description": str
     }
     """
@@ -418,6 +513,7 @@ def _normalize_scenario_events(raw_events: List[Dict] | Dict) -> List[Dict]:
                 "type": mapped_type,
                 "amount": amount,
                 "date_offset_days": 0,
+                "duration_days": None,
                 "description": str(raw_events.get("description") or ""),
             }
         ]
@@ -445,11 +541,23 @@ def _normalize_scenario_events(raw_events: List[Dict] | Dict) -> List[Dict]:
             offset = int(event.get("date_offset_days", 0))
         except (TypeError, ValueError):
             offset = 0
+
+        raw_duration = event.get("duration_days")
+        duration_days = None
+        if raw_duration is not None:
+            try:
+                parsed_duration = int(raw_duration)
+                if parsed_duration > 0:
+                    duration_days = parsed_duration
+            except (TypeError, ValueError):
+                duration_days = None
+
         normalized.append(
             {
                 "type": event_type,
                 "amount": amount,
                 "date_offset_days": max(offset, 0),
+                "duration_days": duration_days,
                 "description": str(event.get("description") or ""),
             }
         )
@@ -489,6 +597,15 @@ def _apply_scenario_events(
             amount = _safe_float(event.get("amount"), 0.0)
             if amount <= 0:
                 continue
+
+            duration_days = event.get("duration_days")
+            if event_type.startswith("recurring") and duration_days is not None:
+                try:
+                    end_date = start_date + timedelta(days=max(int(duration_days) - 1, 0))
+                except (TypeError, ValueError):
+                    end_date = None
+                if end_date is not None and current_date > end_date:
+                    continue
 
             if event_type in {"one_time_income", "recurring_income"}:
                 signed_amount = amount * income_multiplier

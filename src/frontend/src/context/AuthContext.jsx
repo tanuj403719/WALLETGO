@@ -31,7 +31,13 @@ export function AuthProvider({ children }) {
 
         const saved = localStorage.getItem(SESSION_KEY)
         if (saved) {
-          setUser(JSON.parse(saved))
+          const token = localStorage.getItem('auth_token')
+          if (token) {
+            setUser(JSON.parse(saved))
+          } else {
+            // Avoid a stale UI-authenticated state when token is missing.
+            localStorage.removeItem(SESSION_KEY)
+          }
         }
       } catch (error) {
         console.error('Error restoring session:', error)
@@ -159,7 +165,7 @@ export function AuthProvider({ children }) {
     return { error: null }
   }
 
-  const isAuthenticated = Boolean(user)
+  const isAuthenticated = Boolean(user && localStorage.getItem('auth_token'))
 
   return (
     <AuthContext.Provider value={{ user, isLoading, isAuthenticated, signUp, signIn, signInDemo, signOut }}>

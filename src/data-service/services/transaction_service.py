@@ -220,3 +220,9 @@ def insert_transactions(user_id: str, transactions: List[Dict[str, Any]]) -> int
     client = get_supabase_client()
     client.table(TRANSACTIONS_TABLE).insert(payload).execute()
     return len(payload)
+
+
+def clear_transactions(user_id: str) -> None:
+    """Delete all transactions for a specific user."""
+    client = get_supabase_client()
+    client.table(TRANSACTIONS_TABLE).delete().eq("user_id", user_id).execute()

@@ -47,10 +47,12 @@ export const transactionAPI = {
     api.get(`/api/transactions/list?limit=${limit}&offset=${offset}`),
   getRecurring: () => api.get('/api/transactions/recurring'),
   getStats: () => api.get('/api/transactions/stats'),
-  uploadStatement: (file) => {
+  uploadStatement: (file, options = {}) => {
+    const { replaceExisting = false } = options
     const formData = new FormData()
     formData.append('file', file)
-    return api.post('/api/transactions/upload', formData, {
+    const query = replaceExisting ? '?replace_existing=true' : ''
+    return api.post(`/api/transactions/upload${query}`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     })
   },

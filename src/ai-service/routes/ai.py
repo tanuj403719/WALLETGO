@@ -34,7 +34,11 @@ async def api_explain_forecast(request: ExplainForecastRequest):
 
 @router.post("/extract-intent")
 async def api_extract_intent(request: ExtractIntentRequest):
-    return extract_scenario_intent(request.user_input, request.language)
+    return extract_scenario_intent(
+        request.user_input,
+        request.language,
+        request.transaction_context,
+    )
 
 
 @router.post("/scenario-explanation")

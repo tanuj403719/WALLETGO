@@ -18,6 +18,7 @@ export default function StatementUploader({ onSuccess }) {
   const { isAuthenticated } = useAuth()
   const { setEphemeralTransactions, clearEphemeralTransactions } = useForecast()
   const [file, setFile] = useState(null)
+  const [replaceExisting, setReplaceExisting] = useState(false)
   const [status, setStatus] = useState('idle')
   const [message, setMessage] = useState('')
   const [detectedHeaders, setDetectedHeaders] = useState(null)
@@ -34,6 +35,9 @@ export default function StatementUploader({ onSuccess }) {
     setStatus('idle')
     setMessage('')
     setDetectedHeaders(null)
+    if (!isAuthenticated) {
+      setReplaceExisting(false)
+    }
   }
 
   const handleDragOver = (e) => {
@@ -63,6 +67,7 @@ export default function StatementUploader({ onSuccess }) {
   const reset = (e) => {
     e?.stopPropagation()
     setFile(null)
+    setReplaceExisting(false)
     setStatus('idle')
     setMessage('')
     setDetectedHeaders(null)
@@ -79,10 +84,27 @@ export default function StatementUploader({ onSuccess }) {
       let msg = ''
 
       if (isAuthenticated) {
-        const response = await transactionAPI.uploadStatement(file)
+        const response = await transactionAPI.uploadStatement(file, { replaceExisting })
         const imported = response.data.imported
+        const skipped = response.data.skipped_duplicates || 0
+        const parsedTotal = response.data.parsed_total ?? imported + skipped
+        const replacedCount = response.data.replaced_count || 0
         clearEphemeralTransactions()
-        msg = `Imported ${imported} transactions`
+        if (replaceExisting) {
+          if (parsedTotal === 0) {
+            msg = 'No transactions were detected in this file. Existing account data was cleared.'
+          } else {
+            msg = `Replaced ${replacedCount} existing transactions and imported ${imported} from this file.`
+          }
+        } else if (imported > 0) {
+          msg = skipped > 0
+            ? `Imported ${imported} new transactions (${skipped} duplicates skipped)`
+            : `Imported ${imported} transactions`
+        } else if (parsedTotal === 0) {
+          msg = 'No transactions were detected in this file. Try another statement format.'
+        } else {
+          msg = `No new transactions imported. All ${parsedTotal} entries already exist for this account.`
+        }
       } else {
         const response = await transactionAPI.parseOnly(file)
         const parsed = Array.isArray(response.data)
@@ -157,6 +179,16 @@ export default function StatementUploader({ onSuccess }) {
           <button className="primary-cta" onClick={handleUpload}>
             Upload
           </button>
+          {isAuthenticated && (
+            <label className="mt-3 flex items-center justify-center gap-2 text-sm" style={mutedStyle}>
+              <input
+                type="checkbox"
+                checked={replaceExisting}
+                onChange={(e) => setReplaceExisting(e.target.checked)}
+              />
+              Replace existing account transactions with this file
+            </label>
+          )}
           <div
             className="text-xs mt-3 underline"
             style={mutedStyle}
