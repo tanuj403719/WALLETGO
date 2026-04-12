@@ -1,5 +1,4 @@
 import { motion } from 'framer-motion'
-import { useNavigate } from 'react-router-dom'
 
 const sections = [
   {
@@ -41,8 +40,6 @@ const sections = [
 ]
 
 export default function PrivacyPage() {
-  const navigate = useNavigate()
-
   return (
     <div className="postauth-bg relative overflow-hidden py-14 md:py-20">
       <div className="grain-overlay" />
@@ -53,7 +50,6 @@ export default function PrivacyPage() {
           animate={{ opacity: 1, y: 0 }}
           className="text-center mb-14"
         >
-          <p className="accent-pill mb-4">Step 1 of 3</p>
           <h1 className="font-display text-5xl md:text-6xl leading-[0.93] mb-4 text-slate-900">
             Privacy & Security,
             <span className="block text-teal-700">Without Legal Fog</span>
@@ -85,42 +81,6 @@ export default function PrivacyPage() {
             </motion.div>
           ))}
         </div>
-
-        <motion.div
-          initial={{ opacity: 0 }}
-          whileInView={{ opacity: 1 }}
-          viewport={{ once: true }}
-          className="rounded-2xl border border-teal-200 bg-teal-50 p-6 mb-10"
-        >
-          <h3 className="text-lg font-bold text-teal-900 mb-2">For Hackathon Judges</h3>
-          <p className="text-teal-800/90">
-            During the hackathon, we use demo data and NatWest's sandbox API. In production, this would connect to your real NatWest account with the same security standards. You maintain full control and can revoke access anytime.
-          </p>
-        </motion.div>
-
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          className="glass-card text-center p-8"
-        >
-          <h2 className="text-3xl font-bold mb-4 text-slate-900">Ready to enter your forecast workspace?</h2>
-          <p className="text-slate-600 mb-7">By continuing, you agree to Radar privacy terms and data handling policy.</p>
-          <div className="flex justify-center flex-wrap gap-4">
-            <button
-              onClick={() => navigate('/bank-linking')}
-              className="px-8 py-3 primary-cta"
-            >
-              I Agree, Continue
-            </button>
-            <button
-              onClick={() => navigate('/signin')}
-              className="px-8 py-3 secondary-cta"
-            >
-              Back to Sign In
-            </button>
-          </div>
-        </motion.div>
       </div>
     </div>
   )

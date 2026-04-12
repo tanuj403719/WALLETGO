@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
 import { AuthProvider } from './context/AuthContext'
 import { ForecastProvider } from './context/ForecastContext'
@@ -38,7 +38,7 @@ export default function App() {
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/dashboard/forecast" element={<DashboardPage />} />
             <Route path="/dashboard/sandbox" element={<DashboardPage />} />
-            <Route path="/dashboard/alerts" element={<DashboardPage />} />
+            <Route path="/dashboard/alerts" element={<Navigate to="/dashboard" replace />} />
             <Route
               path="/dashboard/settings"
               element={

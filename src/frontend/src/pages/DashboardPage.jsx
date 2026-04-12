@@ -14,7 +14,6 @@ import {
 } from 'recharts'
 import {
   FiActivity,
-  FiAlertTriangle,
   FiChevronLeft,
   FiChevronRight,
   FiGrid,
@@ -42,16 +41,15 @@ const DEFAULT_FORECAST = [
 ]
 
 const LANGUAGE_TEXTS = {
-  en: { placeholder: 'What happens if I...', examples: ['$500 flight', 'Skip coffee 2 weeks', 'Payday 3 days late'] },
-  hi: { placeholder: 'यदि मैं...', examples: ['$500 फ्लाइट', '2 सप्ताह कॉफी छोड़ें', '3 दिन देर से तनख्वाह'] },
-  hinglish: { placeholder: 'Agar main...', examples: ['$500 ka flight book karoo', '2 hafte coffee skip karoo', 'Salary 3 din late ho'] },
+  en: { placeholder: 'What happens if I...' },
+  hi: { placeholder: 'यदि मैं...' },
+  hinglish: { placeholder: 'Agar main...' },
 }
 
 const MENU_ITEMS = [
   { id: 'overview', path: '/dashboard', icon: FiGrid, label: 'Overview' },
   { id: 'forecast', path: '/dashboard/forecast', icon: FiActivity, label: 'Forecast' },
   { id: 'sandbox', path: '/dashboard/sandbox', icon: FiTarget, label: 'What-If Sandbox' },
-  { id: 'alerts', path: '/dashboard/alerts', icon: FiAlertTriangle, label: 'Alerts' },
 ]
 
 const SETTINGS_ITEM = { id: 'settings', path: '/dashboard/settings', icon: FiSettings, label: 'Settings' }
@@ -103,7 +101,6 @@ function getCurrentTab(pathname) {
   if (pathname === '/dashboard' || pathname === '/dashboard/') return 'overview'
   if (pathname.startsWith('/dashboard/forecast')) return 'forecast'
   if (pathname.startsWith('/dashboard/sandbox')) return 'sandbox'
-  if (pathname.startsWith('/dashboard/alerts')) return 'alerts'
   if (pathname.startsWith('/dashboard/settings')) return 'settings'
   return 'overview'
 }
@@ -426,25 +423,6 @@ export default function DashboardPage() {
     }
   }
 
-  const startVoiceInput = () => {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
-    if (!SpeechRecognition) {
-      toast.error('Voice input is not supported in this browser')
-      return
-    }
-
-    const recognition = new SpeechRecognition()
-    recognition.lang = language === 'hi' ? 'hi-IN' : 'en-IN'
-    recognition.interimResults = false
-    recognition.maxAlternatives = 1
-    recognition.onresult = (event) => {
-      const transcript = event.results?.[0]?.[0]?.transcript || ''
-      if (transcript) setScenarioInput(transcript)
-    }
-    recognition.onerror = () => toast.error('Could not capture voice input')
-    recognition.start()
-  }
-
   const renderOverview = () => (
     <div className="space-y-6">
       {isAuthenticated && hasTransactions && (
@@ -636,14 +614,6 @@ export default function DashboardPage() {
             placeholder={LANGUAGE_TEXTS[language].placeholder}
             className="sandbox-input flex-1 px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
           />
-          <button
-            type="button"
-            onClick={startVoiceInput}
-            className="sandbox-mic-btn px-4 rounded-xl border border-slate-300 bg-white hover:bg-slate-50"
-            title="Voice input"
-          >
-            🎤
-          </button>
         </div>
 
         <button
@@ -654,22 +624,14 @@ export default function DashboardPage() {
           {isScenarioRunning ? 'Running...' : 'Run Scenario'}
         </button>
 
-        <div className="mt-5 grid md:grid-cols-3 gap-3">
-          {LANGUAGE_TEXTS[language].examples.map((example) => (
-            <button
-              key={example}
-              onClick={() => {
-                setScenarioInput(example)
-                evaluateScenario(example)
-              }}
-              className="sandbox-quick-chip text-left px-3 py-3 bg-slate-100 hover:bg-slate-200 rounded-xl text-sm font-medium transition"
-            >
-              {example}
-            </button>
-          ))}
-        </div>
-
         <p className="sandbox-note mt-5 text-sm text-gray-700">{scenarioNote}</p>
+
+        <div className="soft-panel mt-5 rounded-xl p-4">
+          <p className="text-xs uppercase tracking-[0.12em] text-slate-500 mb-2">How To Use</p>
+          <p className="text-sm text-slate-700">Type your own scenario in natural language, then click Run Scenario.</p>
+          <p className="text-sm text-slate-700 mt-1">Example style: "What happens if my salary is 5 days late?" or "What if I spend $800 next week?"</p>
+          <p className="text-sm text-slate-700 mt-1">The chart overlays low, likely, and high dotted lines to show possible outcomes.</p>
+        </div>
       </motion.div>
 
       <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="guide-card rounded-2xl p-6 text-slate-900 border border-sky-200 bg-gradient-to-br from-sky-50 via-cyan-50 to-teal-50 shadow-[0_14px_30px_rgba(0,0,0,0.08)]">
@@ -682,26 +644,6 @@ export default function DashboardPage() {
         <div className="mt-6 rounded-xl bg-white border border-sky-200 p-4 text-sm">
           Use this before large spends, travel bookings, or delayed salary periods.
         </div>
-      </motion.div>
-    </div>
-  )
-
-  const renderAlerts = () => (
-    <div className="space-y-4 max-w-4xl">
-      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="border-l-4 border-red-500 glass-card p-5">
-        <p className="font-semibold text-red-900">Overdraft Risk Window</p>
-        <p className="text-sm text-red-800 mt-1">
-          Around {minBalanceDate}, projected balance can approach {formatMoney(minBalance, currency)} due to clustered debits.
-        </p>
-        <button className="mt-3 px-4 py-2 rounded-lg bg-red-100 text-red-700 border border-red-200 text-sm font-medium">Postpone Expense</button>
-      </motion.div>
-
-      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="border-l-4 border-amber-500 glass-card p-5">
-        <p className="font-semibold text-amber-900">Buffer Threshold Advisory</p>
-        <p className="text-sm text-amber-800 mt-1">
-          Your configured alert level is {formatMoney(alertBuffer, currency)}. Consider moving one non-essential payment by 2 to 3 days.
-        </p>
-        <button className="mt-3 px-4 py-2 rounded-lg bg-amber-100 text-amber-700 border border-amber-200 text-sm font-medium">Move Bill</button>
       </motion.div>
     </div>
   )
@@ -831,7 +773,6 @@ export default function DashboardPage() {
     overview: renderOverview(),
     forecast: renderForecast(),
     sandbox: renderSandbox(),
-    alerts: renderAlerts(),
     settings: isAuthenticated ? renderSettings() : renderOverview(),
   }
 

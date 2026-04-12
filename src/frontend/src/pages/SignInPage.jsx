@@ -104,12 +104,6 @@ export default function SignInPage() {
     }
   }
 
-  const handleDemoAccount = () => {
-    setEmail('demo@radar.com')
-    setPassword('demo123')
-    setMode('signin')
-  }
-
   return (
     <div className="min-h-screen bg-[#03141d] text-white relative overflow-hidden">
       <div className="absolute -top-24 -left-24 w-80 h-80 rounded-full bg-cyan-400/20 blur-3xl" />
@@ -190,19 +184,6 @@ export default function SignInPage() {
                 {isLoading ? 'Working...' : mode === 'signin' ? 'Sign In' : 'Create Account'}
               </button>
             </form>
-
-            <div className="my-6 flex items-center">
-              <div className="flex-1 border-t border-white/20" />
-              <span className="px-3 text-slate-400 text-sm">or</span>
-              <div className="flex-1 border-t border-white/20" />
-            </div>
-
-            <button
-              onClick={handleDemoAccount}
-              className="w-full py-3 rounded-xl font-semibold text-lg bg-slate-100 text-slate-900 hover:bg-white transition"
-            >
-              Try Demo Account
-            </button>
 
             <div className="mt-6 text-center">
               <p className="text-slate-300">

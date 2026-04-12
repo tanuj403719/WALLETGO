@@ -74,3 +74,35 @@ def test_max_rows_limit():
     csv = "\n".join(lines) + "\n"
     result = parse_statement(csv.encode("utf-8"), "big.csv")
     assert len(result) == 500
+
+
+def test_parse_currency_formatted_debit_credit_columns():
+    csv = (
+        "Date,Description,Debit Amount,Credit Amount\n"
+        "2024-10-01,Rent,\"$1,400.00\",\n"
+        "2024-10-05,Salary,,\"$4,800.00\"\n"
+        "2024-10-07,Groceries,\"$91.30\",\n"
+    )
+    result = parse_statement(csv.encode("utf-8"), "currency_dc.csv")
+    amounts = {r["description"]: r["amount"] for r in result}
+
+    assert amounts["Rent"] == -1400.0
+    assert amounts["Salary"] == 4800.0
+    assert amounts["Groceries"] == -91.3
+
+
+def test_parse_currency_amount_column_with_dr_cr_and_parentheses():
+    csv = (
+        "Date,Description,Amount\n"
+        "2024-05-01,Coffee,\"($4.50)\"\n"
+        "2024-05-02,Refund,\"$12.00\"\n"
+        "2024-05-03,Bonus,\"£1,234.56 CR\"\n"
+        "2024-05-04,Bill,\"$52.10 DR\"\n"
+    )
+    result = parse_statement(csv.encode("utf-8"), "currency_amount.csv")
+    amounts = {r["description"]: r["amount"] for r in result}
+
+    assert amounts["Coffee"] == -4.5
+    assert amounts["Refund"] == 12.0
+    assert amounts["Bonus"] == 1234.56
+    assert amounts["Bill"] == -52.1

@@ -30,7 +30,7 @@ DESCRIPTION_VARIANTS = [
 ]
 
 DATE_REGEX = r'\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}|\d{4}-\d{2}-\d{2}'
-AMOUNT_REGEX = r'-?\d{1,3}(?:,\d{3})*(?:\.\d{2})'
+AMOUNT_REGEX = r'\(?\s*(?:[$£€]\s*)?-?\d{1,3}(?:,\d{3})*(?:\.\d{2})\s*\)?'
 
 
 class StatementParseError(Exception):
@@ -45,6 +45,45 @@ def _find_column(columns_lower: Dict[str, str], variants: List[str]) -> str | No
         if variant in columns_lower:
             return columns_lower[variant]
     return None
+
+
+def _parse_amount_value(value: object) -> float | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+
+    upper = text.upper()
+    is_negative = False
+
+    if text.startswith("(") and text.endswith(")"):
+        is_negative = True
+    if upper.endswith("-"):
+        is_negative = True
+    if re.search(r"\bDR\b", upper):
+        is_negative = True
+
+    cleaned = text.replace(",", "")
+    cleaned = re.sub(r"\b(?:DR|CR)\b", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"[^0-9.\-]", "", cleaned)
+
+    if cleaned.startswith("-"):
+        is_negative = True
+    cleaned = cleaned.replace("-", "")
+
+    if not cleaned or cleaned == ".":
+        return None
+
+    try:
+        amount = float(cleaned)
+    except ValueError:
+        return None
+
+    return -abs(amount) if is_negative else amount
+
+
+def _parse_amount_series(series: pd.Series) -> pd.Series:
+    parsed = series.map(_parse_amount_value)
+    return pd.to_numeric(parsed, errors="coerce")
 
 
 def _normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
@@ -67,10 +106,10 @@ def _normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
     rename_map = {date_col: "date"}
 
     if amount_col is not None:
-        rename_map[amount_col] = "amount"
+        df["amount"] = _parse_amount_series(df[amount_col])
     elif debit_col is not None and credit_col is not None:
-        debit_vals = pd.to_numeric(df[debit_col], errors="coerce").fillna(0)
-        credit_vals = pd.to_numeric(df[credit_col], errors="coerce").fillna(0)
+        debit_vals = _parse_amount_series(df[debit_col]).fillna(0)
+        credit_vals = _parse_amount_series(df[credit_col]).fillna(0)
         df["amount"] = credit_vals - debit_vals
     else:
         raise StatementParseError(
@@ -158,10 +197,8 @@ def _parse_pdf(content: bytes) -> List[Dict]:
         amount_matches = re.findall(AMOUNT_REGEX, line)
         if not date_match or not amount_matches:
             continue
-        raw_amount = amount_matches[-1].replace(",", "")
-        try:
-            amount = float(raw_amount)
-        except ValueError:
+        amount = _parse_amount_value(amount_matches[-1])
+        if amount is None:
             continue
         date_str = date_match.group(0)
         parsed_date = pd.to_datetime(date_str, errors="coerce", dayfirst=False)

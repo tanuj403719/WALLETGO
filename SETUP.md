@@ -31,17 +31,24 @@ git clone <your-repo-url>
 cd WALLETGO
 ```
 
-Copy env file:
+Copy env files from both example files:
 
 ```bash
 cp .env.example .env
+cp src/frontend/.env.example src/frontend/.env
 ```
 
 If you are on Windows PowerShell:
 
 ```powershell
 Copy-Item .env.example .env
+Copy-Item src/frontend/.env.example src/frontend/.env
 ```
+
+Important:
+- All required environment variable keys are already listed in both example files.
+- Use those files as-is and fill values where needed.
+- Replace GEMINI_API_KEY in .env with your own Gemini API key.
 
 ---
 
