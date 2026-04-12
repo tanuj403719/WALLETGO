@@ -44,35 +44,39 @@ export default function PrivacyPage() {
   const navigate = useNavigate()
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-light to-gray-50 py-20">
-      <div className="max-w-4xl mx-auto px-4">
-        {/* Header */}
+    <div className="postauth-bg relative overflow-hidden py-14 md:py-20">
+      <div className="grain-overlay" />
+
+      <div className="max-w-6xl mx-auto px-4 relative z-10 text-slate-900">
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="text-center mb-16"
+          className="text-center mb-14"
         >
-          <h1 className="text-5xl font-bold mb-4">Privacy & Security</h1>
-          <p className="text-xl text-gray-600">
-            We're transparent about how we handle your financial data.
+          <p className="accent-pill mb-4">Step 1 of 3</p>
+          <h1 className="font-display text-5xl md:text-6xl leading-[0.93] mb-4 text-slate-900">
+            Privacy & Security,
+            <span className="block text-teal-700">Without Legal Fog</span>
+          </h1>
+          <p className="text-slate-600 text-lg max-w-2xl mx-auto">
+            Your financial timeline is sensitive. Radar keeps control transparent, consent-driven, and auditable.
           </p>
         </motion.div>
 
-        {/* Cards */}
-        <div className="grid md:grid-cols-2 gap-8 mb-12">
+        <div className="grid md:grid-cols-2 gap-6 mb-10">
           {sections.map((section, idx) => (
             <motion.div
               key={idx}
               initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
-              transition={{ delay: idx * 0.1 }}
+              transition={{ delay: idx * 0.08 }}
               viewport={{ once: true }}
-              className="bg-white rounded-xl p-6 shadow-md hover:shadow-lg transition"
+              className="glass-card p-6"
             >
-              <h2 className="text-2xl font-bold mb-4 text-primary">{section.title}</h2>
+              <h2 className="text-2xl font-bold mb-4 text-slate-900">{section.title}</h2>
               <ul className="space-y-3">
                 {section.points.map((point, i) => (
-                  <li key={i} className="text-gray-700 flex items-start">
+                  <li key={i} className="text-slate-700 flex items-start">
                     <span className="mr-3">{point.split(' ')[0]}</span>
                     <span>{point.substring(point.indexOf(' ') + 1)}</span>
                   </li>
@@ -82,38 +86,36 @@ export default function PrivacyPage() {
           ))}
         </div>
 
-        {/* Important Note */}
         <motion.div
           initial={{ opacity: 0 }}
           whileInView={{ opacity: 1 }}
           viewport={{ once: true }}
-          className="bg-blue-50 border-l-4 border-blue-500 p-6 rounded-lg mb-12"
+          className="rounded-2xl border border-teal-200 bg-teal-50 p-6 mb-10"
         >
-          <h3 className="text-lg font-bold text-blue-900 mb-2">For Hackathon Judges</h3>
-          <p className="text-blue-800">
+          <h3 className="text-lg font-bold text-teal-900 mb-2">For Hackathon Judges</h3>
+          <p className="text-teal-800/90">
             During the hackathon, we use demo data and NatWest's sandbox API. In production, this would connect to your real NatWest account with the same security standards. You maintain full control and can revoke access anytime.
           </p>
         </motion.div>
 
-        {/* CTA */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
-          className="text-center bg-primary text-white rounded-xl p-8"
+          className="glass-card text-center p-8"
         >
-          <h2 className="text-3xl font-bold mb-4">Ready to build your financial future?</h2>
-          <p className="text-white/90 mb-6">By continuing, you agree to Radar privacy terms and data handling policy.</p>
-          <div className="flex justify-center gap-4">
+          <h2 className="text-3xl font-bold mb-4 text-slate-900">Ready to enter your forecast workspace?</h2>
+          <p className="text-slate-600 mb-7">By continuing, you agree to Radar privacy terms and data handling policy.</p>
+          <div className="flex justify-center flex-wrap gap-4">
             <button
               onClick={() => navigate('/bank-linking')}
-              className="bg-white text-primary px-8 py-3 rounded-lg font-semibold hover:bg-gray-100 transition"
+              className="px-8 py-3 primary-cta"
             >
               I Agree, Continue
             </button>
             <button
               onClick={() => navigate('/signin')}
-              className="border-2 border-white text-white px-8 py-3 rounded-lg font-semibold hover:bg-white/10 transition"
+              className="px-8 py-3 secondary-cta"
             >
               Back to Sign In
             </button>

@@ -96,20 +96,20 @@ export default function SignInPage() {
           animate={{ opacity: 1, scale: 1 }}
           className="w-full max-w-md mx-auto"
         >
-          <div className="rounded-3xl border border-white/15 bg-white/95 text-gray-900 shadow-2xl p-8">
+          <div className="rounded-3xl border border-white/20 bg-slate-900/70 text-white backdrop-blur-sm shadow-2xl p-8">
             <div className="text-center mb-7">
               <div className="text-4xl mb-3">📡</div>
-              <h1 className="text-3xl font-bold text-gray-900">
+              <h1 className="text-3xl font-bold text-white">
                 {mode === 'signin' ? 'Welcome Back' : 'Create Account'}
               </h1>
-              <p className="text-gray-600 mt-2">
+              <p className="text-slate-300 mt-2">
                 {mode === 'signin' ? 'Sign in to continue forecasting' : 'Start your Radar account'}
               </p>
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-5">
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                <label className="block text-sm font-semibold text-slate-200 mb-2">
                   Email Address
                 </label>
                 <input
@@ -117,13 +117,13 @@ export default function SignInPage() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="you@example.com"
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-cyan-500 focus:border-transparent outline-none"
+                  className="w-full px-4 py-3 border border-white/20 bg-slate-950/50 text-white placeholder:text-slate-400 rounded-xl focus:ring-2 focus:ring-cyan-500 focus:border-transparent outline-none"
                   required
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                <label className="block text-sm font-semibold text-slate-200 mb-2">
                   Password
                 </label>
                 <input
@@ -131,7 +131,7 @@ export default function SignInPage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-cyan-500 focus:border-transparent outline-none"
+                  className="w-full px-4 py-3 border border-white/20 bg-slate-950/50 text-white placeholder:text-slate-400 rounded-xl focus:ring-2 focus:ring-cyan-500 focus:border-transparent outline-none"
                   required
                 />
               </div>
@@ -146,25 +146,25 @@ export default function SignInPage() {
             </form>
 
             <div className="my-6 flex items-center">
-              <div className="flex-1 border-t border-gray-300" />
-              <span className="px-3 text-gray-500 text-sm">or</span>
-              <div className="flex-1 border-t border-gray-300" />
+              <div className="flex-1 border-t border-white/20" />
+              <span className="px-3 text-slate-400 text-sm">or</span>
+              <div className="flex-1 border-t border-white/20" />
             </div>
 
             <button
               onClick={handleDemoAccount}
-              className="w-full py-3 rounded-xl font-semibold text-lg bg-gray-100 text-gray-800 hover:bg-gray-200 transition"
+              className="w-full py-3 rounded-xl font-semibold text-lg bg-slate-100 text-slate-900 hover:bg-white transition"
             >
               Try Demo Account
             </button>
 
             <div className="mt-6 text-center">
-              <p className="text-gray-600">
+              <p className="text-slate-300">
                 {mode === 'signin' ? 'New user?' : 'Already have an account?'}{' '}
                 <button
                   type="button"
                   onClick={() => setMode(mode === 'signin' ? 'signup' : 'signin')}
-                  className="text-cyan-700 font-semibold hover:underline"
+                  className="text-cyan-300 font-semibold hover:underline"
                 >
                   {mode === 'signin' ? 'Create account' : 'Sign in'}
                 </button>

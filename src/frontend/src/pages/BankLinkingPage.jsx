@@ -20,85 +20,86 @@ export default function BankLinkingPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-light to-gray-50 py-20">
-      <div className="max-w-4xl mx-auto px-4">
-        {/* Header */}
+    <div className="postauth-bg relative overflow-hidden py-14 md:py-20">
+      <div className="grain-overlay" />
+
+      <div className="max-w-6xl mx-auto px-4 relative z-10 text-slate-900">
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
           className="text-center mb-12"
         >
-          <h1 className="text-4xl font-bold mb-4">Connect Your Bank</h1>
-          <p className="text-xl text-gray-600">
-            Choose how you want to get started with Radar
+          <p className="accent-pill mb-4">Step 2 of 3</p>
+          <h1 className="font-display text-5xl md:text-6xl mb-4 leading-[0.92] text-slate-900">
+            Choose Your
+            <span className="block text-sky-700">Data Path</span>
+          </h1>
+          <p className="text-slate-600 text-lg max-w-2xl mx-auto">
+            Pick the flow that matches your demo style. Both options unlock the full Radar dashboard.
           </p>
         </motion.div>
 
-        {/* Options */}
-        <div className="grid md:grid-cols-2 gap-8 mb-12">
-          {/* Option 1: Real Bank */}
+        <div className="grid md:grid-cols-2 gap-6 md:gap-8 mb-10">
           <motion.div
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
             onClick={() => setSelected('real')}
-            className={`p-8 rounded-xl border-2 cursor-pointer transition ${
+            className={`glass-card p-8 cursor-pointer transition-all duration-200 ${
               selected === 'real'
-                ? 'border-primary bg-blue-50'
-                : 'border-gray-200 bg-white hover:border-primary'
+                ? 'ring-2 ring-cyan-300/80'
+                : 'hover:ring-2 hover:ring-cyan-200/60'
             }`}
           >
             <div className="text-5xl mb-4">🏦</div>
-            <h2 className="text-2xl font-bold mb-4">Connect NatWest Account</h2>
-            <p className="text-gray-600 mb-6">
-              Real transactions, real forecasts. We'll securely access your recent transaction history.
+            <h2 className="text-2xl font-bold mb-3 text-slate-900">Connect NatWest Account</h2>
+            <p className="text-slate-600 mb-6">
+              Secure bank-link simulation with realistic transaction sync and stronger personalization.
             </p>
-            <ul className="space-y-2 mb-6 text-sm text-gray-700">
-              <li>✅ Read-only access</li>
-              <li>✅ Last 3 months of data</li>
-              <li>✅ Real-time sync</li>
-              <li>✅ Most accurate forecasts</li>
+            <ul className="space-y-2 mb-6 text-sm text-slate-700">
+              <li>Read-only connection model</li>
+              <li>Last 3 months transaction ingest</li>
+              <li>Continuous refresh behavior</li>
+              <li>Highest fidelity forecasting</li>
             </ul>
-            <button onClick={handleConnectReal} className="w-full btn-primary py-2 font-semibold">
-              Connect with NatWest
+            <button onClick={handleConnectReal} className="w-full py-3 primary-cta">
+              Continue with NatWest
             </button>
           </motion.div>
 
-          {/* Option 2: Demo Data */}
           <motion.div
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             onClick={() => setSelected('demo')}
-            className={`p-8 rounded-xl border-2 cursor-pointer transition ${
+            className={`glass-card p-8 cursor-pointer transition-all duration-200 ${
               selected === 'demo'
-                ? 'border-primary bg-blue-50'
-                : 'border-gray-200 bg-white hover:border-primary'
+                ? 'ring-2 ring-orange-300/80'
+                : 'hover:ring-2 hover:ring-orange-200/60'
             }`}
           >
             <div className="text-5xl mb-4">🎮</div>
-            <h2 className="text-2xl font-bold mb-4">Continue with Demo Data</h2>
-            <p className="text-gray-600 mb-6">
-              Try Radar with realistic synthetic data. Perfect for judges and quick demos.
+            <h2 className="text-2xl font-bold mb-3 text-slate-900">Use Curated Demo Data</h2>
+            <p className="text-slate-600 mb-6">
+              Jump in instantly with polished synthetic data designed for judging and walkthroughs.
             </p>
-            <ul className="space-y-2 mb-6 text-sm text-gray-700">
-              <li>✅ Instant access</li>
-              <li>✅ No real data needed</li>
-              <li>✅ Full feature access</li>
-              <li>✅ Easy for judging</li>
+            <ul className="space-y-2 mb-6 text-sm text-slate-700">
+              <li>Immediate access</li>
+              <li>No external setup needed</li>
+              <li>All features enabled</li>
+              <li>Ideal for rapid demo loops</li>
             </ul>
-            <button onClick={handleDemoData} className="w-full btn-primary py-2 font-semibold">
-              Use Demo Account
+            <button onClick={handleDemoData} className="w-full py-3 rounded-xl font-semibold bg-gradient-to-r from-orange-500 to-amber-400 text-white hover:brightness-105 transition">
+              Launch Demo Workspace
             </button>
           </motion.div>
         </div>
 
-        {/* Info Box */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="bg-amber-50 border border-amber-200 rounded-lg p-6 text-center"
+          className="soft-panel px-6 py-5 text-amber-900"
         >
-          <p className="text-amber-900">
-            <strong>Pro tip:</strong> During the hackathon, most judges prefer the demo data option for faster iteration. You can always switch to real data later!
+          <p>
+            <strong>Hackathon tip:</strong> Demo mode is fastest for judges. You can switch to a real bank-linked flow later from Settings.
           </p>
         </motion.div>
       </div>

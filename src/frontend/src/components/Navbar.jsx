@@ -8,12 +8,12 @@ export default function Navbar() {
 
   const isActive = (path) => location.pathname === path
 
-  if (location.pathname === '/dashboard') {
+  if (location.pathname.startsWith('/dashboard')) {
     return null
   }
 
   return (
-    <nav className="bg-white shadow-md">
+    <nav className="bg-[#03141d]/95 border-b border-white/10 backdrop-blur-md">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
           {/* Logo */}
@@ -28,26 +28,34 @@ export default function Navbar() {
             <Link
               to="/"
               className={`${
-                isActive('/') ? 'text-primary font-semibold' : 'text-gray-700'
-              } hover:text-primary transition`}
+                isActive('/') ? 'text-radar-accent font-semibold' : 'text-slate-200'
+              } hover:text-radar-accent transition`}
             >
               About
             </Link>
             <Link
               to="/demo"
               className={`${
-                isActive('/demo') ? 'text-primary font-semibold' : 'text-gray-700'
-              } hover:text-primary transition`}
+                isActive('/demo') ? 'text-radar-accent font-semibold' : 'text-slate-200'
+              } hover:text-radar-accent transition`}
             >
               Demo
             </Link>
             <Link
               to="/privacy"
               className={`${
-                isActive('/privacy') ? 'text-primary font-semibold' : 'text-gray-700'
-              } hover:text-primary transition`}
+                isActive('/privacy') ? 'text-radar-accent font-semibold' : 'text-slate-200'
+              } hover:text-radar-accent transition`}
             >
               Privacy
+            </Link>
+            <Link
+              to="/dashboard/settings"
+              className={`${
+                isActive('/dashboard/settings') ? 'text-radar-accent font-semibold' : 'text-slate-200'
+              } hover:text-radar-accent transition`}
+            >
+              Settings
             </Link>
             <Link to="/signin" className="btn-primary">
               Sign In
@@ -56,7 +64,7 @@ export default function Navbar() {
 
           {/* Mobile Menu Button */}
           <button
-            className="md:hidden text-gray-700"
+            className="md:hidden text-slate-200"
             onClick={() => setIsOpen(!isOpen)}
           >
             {isOpen ? <FiX size={24} /> : <FiMenu size={24} />}
@@ -68,25 +76,31 @@ export default function Navbar() {
           <div className="md:hidden pb-4 space-y-2">
             <Link
               to="/"
-              className="block px-4 py-2 text-gray-700 hover:text-primary"
+              className="block px-4 py-2 text-slate-200 hover:text-radar-accent"
             >
               About
             </Link>
             <Link
               to="/demo"
-              className="block px-4 py-2 text-gray-700 hover:text-primary"
+              className="block px-4 py-2 text-slate-200 hover:text-radar-accent"
             >
               Demo
             </Link>
             <Link
               to="/privacy"
-              className="block px-4 py-2 text-gray-700 hover:text-primary"
+              className="block px-4 py-2 text-slate-200 hover:text-radar-accent"
             >
               Privacy
             </Link>
             <Link
+              to="/dashboard/settings"
+              className="block px-4 py-2 text-slate-200 hover:text-radar-accent"
+            >
+              Settings
+            </Link>
+            <Link
               to="/signin"
-              className="block px-4 py-2 text-gray-700 hover:text-primary"
+              className="block px-4 py-2 text-slate-200 hover:text-radar-accent"
             >
               Sign In
             </Link>
