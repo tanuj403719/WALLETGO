@@ -10,11 +10,13 @@ from schemas.requests import (
     ExplainForecastRequest,
     ExtractIntentRequest,
     ScenarioExplanationRequest,
+    TargetBalanceAdviceRequest,
 )
 from services.ai_service import (
     extract_scenario_intent,
     generate_explanation,
     generate_scenario_explanation,
+    generate_target_balance_advice,
 )
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
@@ -57,3 +59,13 @@ async def api_suggestions(language: str = "en"):
         "language": language,
         "suggestions": _SUGGESTIONS.get(language, _SUGGESTIONS["en"]),
     }
+
+
+@router.post("/target-balance-advice")
+async def api_target_balance_advice(request: TargetBalanceAdviceRequest):
+    advice = generate_target_balance_advice(
+        request.target_plan,
+        request.language,
+        request.transaction_context,
+    )
+    return {"advice": advice, "language": request.language}

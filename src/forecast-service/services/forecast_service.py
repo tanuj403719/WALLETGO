@@ -496,7 +496,53 @@ def run_scenario(base_forecast: Dict, scenario_events: List[Dict] | Dict) -> Tup
         "confidence": min(99, base_forecast.get("confidence", 70) + 5),
     }
 
+    _annotate_scenario_vs_base(base_rows, low)
+    _annotate_scenario_vs_base(base_rows, likely)
+    _annotate_scenario_vs_base(base_rows, high)
+
     return low, likely, high
+
+
+def _annotate_scenario_vs_base(base_rows: List[Dict], scenario_payload: Dict) -> None:
+    """Attach row-level and summary deltas/colors for scenario chart rendering."""
+    scenario_rows = scenario_payload.get("forecast_data", [])
+    if not isinstance(scenario_rows, list) or not scenario_rows:
+        scenario_payload["line_color"] = "white"
+        scenario_payload["net_difference"] = 0.0
+        return
+
+    base_by_date = {
+        str(item.get("date")): _safe_float(item.get("predicted_balance", item.get("balance", 0.0)), 0.0)
+        for item in (base_rows or [])
+    }
+
+    net_difference = 0.0
+    for row in scenario_rows:
+        date_key = str(row.get("date"))
+        base_balance = base_by_date.get(date_key, _safe_float(row.get("predicted_balance", row.get("balance", 0.0)), 0.0))
+        scenario_balance = _safe_float(row.get("predicted_balance", row.get("balance", 0.0)), 0.0)
+        difference = round(scenario_balance - base_balance, 2)
+
+        if difference > 0:
+            row_color = "green"
+        elif difference < 0:
+            row_color = "red"
+        else:
+            row_color = "white"
+
+        row["difference_vs_base"] = difference
+        row["line_color"] = row_color
+        net_difference = difference
+
+    if net_difference > 0:
+        summary_color = "green"
+    elif net_difference < 0:
+        summary_color = "red"
+    else:
+        summary_color = "white"
+
+    scenario_payload["line_color"] = summary_color
+    scenario_payload["net_difference"] = round(net_difference, 2)
 
 
 def _normalize_scenario_events(raw_events: List[Dict] | Dict) -> List[Dict]:

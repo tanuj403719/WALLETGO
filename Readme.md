@@ -1,289 +1,321 @@
-# WALLETGO - Personalized Liquidity Radar
+# WALLETGO — Personalized Liquidity Radar
 
-WALLETGO is a full-stack microservice app for proactive money planning. It turns bank statements into a 42-day liquidity forecast, allows natural-language what-if simulation, and explains outcomes in English, Hinglish, or Hindi.
+AI-powered financial forecasting tool that predicts your bank balance for the next 6 weeks with intelligent "what-if" scenario analysis.
 
-## Why WALLETGO Stands Out To Hackathon Judges
+Built for the **NatWest Code for Purpose Hackathon**.
 
-- Real user pain solved: people usually react after cash crunch, WALLETGO predicts it first.
-- End-to-end build: ingestion, modeling, AI reasoning, and interactive UX in one product.
-- Demo-friendly: no-login flow plus real-account flow, both available during judging.
-- Explainable output: low/likely/high scenario overlays and confidence score, not black-box numbers.
+---
+
+## Features
+
+- **6-Week Balance Forecast** — Prophet time-series model with confidence intervals
+- **What-If Scenario Analysis** — "What happens if I spend £500 on a flight this week?"
+- **Multilingual Explanations** — English, Hinglish, and Hindi via Gemini
+- **Early Warning Alerts** — Overdraft risk and tight-cash-buffer notifications
+- **Zero External Config** — Runs fully offline with SQLite and template fallbacks
+- **Demo Mode** — One-click access with pre-seeded realistic transaction data
+
+---
 
 ## Architecture
 
-```text
-React/Vite Frontend (:3000)
-                |
-                | REST /api/*
-                v
-FastAPI API Gateway (:8080)
-    - token verification
-    - request orchestration
-    - downstream health checks
-            |                |                |
-            v                v                v
-Data Service       Forecast Service   AI Service
-(:8003)            (:8001)            (:8002)
-Supabase storage   Prophet hybrid     Gemini + fallback templates
-CSV/PDF parsing    scenario math      intent + explanation generation
+```
+Browser (React/Vite)  :3000
+         │
+         ▼  REST  /api/*
+ ┌───────────────────┐
+ │   API Gateway     │  :8080
+ │   src/backend/    │  JWT auth, CORS, retry logic
+ └──┬────────┬───────┘
+    │        │        │
+    ▼        ▼        ▼
+:8003     :8001     :8002
+Data      Forecast   AI
+Service   Service    Service
+SQLite    Prophet    Gemini
+                     (template fallback)
 ```
 
-## Services
-
-| Service | Port | Purpose |
+| Service | Port | Responsibility |
 |---|---|---|
-| Frontend | 3000 | Landing, demo, sign-in, dashboard UX |
-| API Gateway | 8080 | Single entry point, auth, fan-out routing |
-| Data Service | 8003 | Statement parsing, Supabase persistence, stats/recurring data |
-| Forecast Service | 8001 | 42-day forecast generation and scenario transformations |
-| AI Service | 8002 | Scenario intent extraction + multilingual narrative explanation |
+| API Gateway | 8080 | Auth, routing, orchestration |
+| Data Service | 8003 | SQLite persistence, bcrypt auth, JWT issuance |
+| Forecast Service | 8001 | Prophet time-series forecasting |
+| AI Service | 8002 | NL explanations (Gemini / template fallback) |
+| Frontend | 3000 | React + Vite + Tailwind |
 
-## App Navigation Guide (Current UI)
+---
 
-This section is designed for judges and first-time users.
+## Project Structure
 
-### Public routes (top nav)
-
-- `/` - Landing page (product pitch + CTA).
-- `/demo` - Interactive no-login showcase.
-- `/signin` - Sign in / create account.
-- `/privacy`, `/terms` - policy pages.
-
-### Demo journey (no login)
-
-1. Open `/demo` from landing.
-2. Click `Upload Statement Demo` to go to `/bank-linking?mode=upload`.
-3. Upload CSV/PDF statement (parse-only mode, no persistence required).
-4. Auto-navigate to dashboard with generated forecast.
-5. Use left menu tabs:
-     - `Overview`
-     - `Forecast`
-     - `What-If Sandbox`
-6. Use `Exit Demo` in sidebar to return home.
-
-Alternative demo path:
-
-- On `/demo`, choose `Continue with Sample Data` to jump directly to `/dashboard`.
-
-### Signed-in journey
-
-1. Open `/signin`.
-2. Sign in or create account.
-3. First-time account with no transactions sees `Upload your first statement` step.
-4. After upload, dashboard unlocks full view.
-5. Signed-in sidebar includes:
-     - `Overview`
-     - `Forecast`
-     - `What-If Sandbox`
-     - `Settings`
-
-Notes on recent UI behavior:
-
-- The old Alerts tab was intentionally removed.
-- `/dashboard/alerts` now redirects to `/dashboard`.
-- The mic button and default scenario chips were removed from sandbox; users type their own what-if prompt.
-
-## Dashboard Walkthrough (What To Show Judges)
-
-### Overview tab
-
-- Liquidity score card.
-- Minimum 30-day balance and date.
-- Model confidence indicator.
-- Radar gauge and health summary.
-
-### Forecast tab
-
-- 42-day projected balance chart.
-- Confidence badge.
-- Optional baseline toggle.
-- Scenario overlay support (low/likely/high dotted lines when a scenario is run).
-
-### What-If Sandbox tab
-
-- Free-text what-if input.
-- Language switch: English, Hinglish, Hindi.
-- Run Scenario button.
-- Built-in helper box explaining prompt style and interpretation.
-
-### Settings tab (signed-in only)
-
-- Currency selection.
-- Theme toggle.
-- Alert buffer slider used by dashboard risk framing.
-
-## Hackathon Demo Playbook (5-7 Minutes)
-
-### 1) Opening pitch (30-45 seconds)
-
-- Problem: users discover cash flow risk too late.
-- Solution: WALLETGO predicts 42 days ahead and simulates decisions before spending.
-
-### 2) Instant traction (60-90 seconds)
-
-- Open `/demo`.
-- Show one-click entry and/or direct sample-data dashboard path.
-- Highlight speed: insight in seconds, no onboarding friction.
-
-### 3) Real-data credibility (90-120 seconds)
-
-- Go to upload demo flow.
-- Upload one PDF from `test_statements/`.
-- Show forecast refresh and risk metrics update.
-
-### 4) Decision intelligence (90-120 seconds)
-
-- In sandbox, type a natural prompt like:
-    - `What if my salary is 5 days late?`
-    - `What if I spend $800 next week?`
-- Show low/likely/high lines and explanation text.
-
-### 5) Technical depth close (60-90 seconds)
-
-- Mention architecture split:
-    - gateway orchestration
-    - Supabase persistence
-    - forecast model with fallback
-    - Gemini extraction/explanations with graceful fallback
-
-### 6) Impact close (20-30 seconds)
-
-- "We move users from reactive budgeting to proactive financial planning."
-
-## Repository Layout
-
-```text
+```
 WALLETGO/
-    Readme.md
-    SETUP.md
-    requirements.txt
-    scripts/
-        start.sh
-    src/
-        backend/
-        data-service/
-        forecast-service/
-        ai-service/
-        frontend/
-    configs/
-        supabase_schema.sql
-    test_statements/        # 10 sample PDF statements
-    tests/
+├── scripts/
+│   └── start.sh                 # One-command startup (Mac/Linux)
+├── src/
+│   ├── backend/                 # API Gateway  :8080
+│   │   ├── main.py
+│   │   ├── deps.py              # JWT verify_token dependency
+│   │   ├── client.py            # httpx client + retry logic
+│   │   ├── routes/
+│   │   │   ├── auth.py
+│   │   │   ├── forecast.py
+│   │   │   ├── scenarios.py
+│   │   │   └── transactions.py
+│   │   └── requirements.txt
+│   ├── data-service/            # SQLite persistence  :8003
+│   │   ├── main.py
+│   │   ├── models/db.py
+│   │   ├── schemas/requests.py
+│   │   ├── services/
+│   │   │   ├── auth_service.py
+│   │   │   └── transaction_service.py
+│   │   ├── routes/
+│   │   │   ├── auth.py
+│   │   │   └── transactions.py
+│   │   └── requirements.txt
+│   ├── forecast-service/        # Prophet forecasting  :8001
+│   │   ├── main.py
+│   │   ├── schemas/requests.py
+│   │   ├── services/forecast_service.py
+│   │   ├── routes/forecast.py
+│   │   └── requirements.txt
+│   ├── ai-service/              # LLM explanations  :8002
+│   │   ├── main.py
+│   │   ├── schemas/requests.py
+│   │   ├── services/ai_service.py
+│   │   ├── routes/ai.py
+│   │   └── requirements.txt
+│   └── frontend/                # React + Vite  :3000
+│       ├── src/
+│       │   ├── pages/
+│       │   ├── components/
+│       │   ├── context/
+│       │   └── utils/
+│       ├── package.json
+│       └── vite.config.js
+├── tests/
+├── docs/architecture.md
+├── requirements.txt             # Unified Python deps
+└── .env.example
 ```
 
-## Setup
+---
 
-Use full instructions in `SETUP.md`.
+## Quick Start
 
-Quick start on macOS/Linux:
+### Prerequisites
+
+| Tool | Version | Mac install | Windows install |
+|---|---|---|---|
+| Python | 3.10+ | `brew install python` | [python.org](https://www.python.org/downloads/) |
+| Node.js | 18+ | `brew install node` | [nodejs.org](https://nodejs.org/) |
+| Git | any | `brew install git` | [git-scm.com](https://git-scm.com/) |
+
+---
+
+### Mac / Linux
 
 ```bash
-git clone <your-repo-url>
+# 1. Clone
+git clone <repo-url>
 cd WALLETGO
+
+# 2. Copy environment file
 cp .env.example .env
-cp src/frontend/.env.example src/frontend/.env
-# set your GEMINI_API_KEY in .env
+# Optionally add your GEMINI_API_KEY in .env (the app works without it)
+
+# 3. Run everything with one command
 chmod +x scripts/start.sh
 ./scripts/start.sh
 ```
 
+The script will:
+- Install all Python and Node dependencies automatically
+- Start each service in the correct order, polling `/health` before proceeding
+- Print URLs when everything is ready
+
+---
+
+### Windows
+
+**Option A — Docker (recommended, no Python setup needed)**
+
+Requires [Docker Desktop](https://www.docker.com/products/docker-desktop/).
+
+```bat
+copy .env.example .env
+docker compose up --build
+```
+
+Then open http://localhost:3000.
+
+**Option B — PowerShell (manual)**  
+
+> Requires [Miniconda](https://docs.conda.io/en/latest/miniconda.html) — standard `pip install` fails on Windows for `prophet`.
+
+```powershell
+# 1. Copy environment file
+Copy-Item .env.example .env
+
+# 2. Create conda env and install dependencies
+conda create -n walletgo python=3.11 -y
+conda activate walletgo
+conda install -c conda-forge prophet pandas numpy -y
+pip install fastapi uvicorn pydantic python-dotenv httpx sqlalchemy google-generativeai email-validator PyJWT bcrypt python-dateutil
+
+# 3. Install frontend dependencies
+cd src\frontend; npm install; cd ..\..
+
+# 4. Start each service in a new window
+start cmd /k "conda activate walletgo && uvicorn main:app --host 0.0.0.0 --port 8003 --app-dir src/data-service"
+start cmd /k "conda activate walletgo && uvicorn main:app --host 0.0.0.0 --port 8001 --app-dir src/forecast-service"
+start cmd /k "conda activate walletgo && uvicorn main:app --host 0.0.0.0 --port 8002 --app-dir src/ai-service"
+start cmd /k "conda activate walletgo && uvicorn main:app --host 0.0.0.0 --port 8080 --app-dir src/backend"
+
+# 5. Start frontend
+cd src\frontend; npm run dev
+```
+
+---
+
+### Access the app
+
+| URL | Description |
+|---|---|
+| http://localhost:3000 | Frontend (main app) |
+| http://localhost:8080/docs | Gateway API docs (Swagger) |
+| http://localhost:8080/api/health/services | Check all services are healthy |
+
+---
+
 ## Environment Variables
 
-Root `.env` (backend services):
+Copy `.env.example` to `.env`. The app runs fully offline without any variables set.
 
-- `GEMINI_API_KEY`, `GEMINI_MODEL`
-- `FORECAST_SERVICE_URL`, `AI_SERVICE_URL`, `DATA_SERVICE_URL`
-- `JWT_SECRET`
-- `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`
-- `SUPABASE_TRANSACTIONS_TABLE`, `SUPABASE_JWT_AUDIENCE`, `SUPABASE_ISSUER`
+```env
+# ── Optional: enables real Gemini explanations ───────────────────────
+# Without this, the app falls back to template-based responses (still works)
+GEMINI_API_KEY=
+GEMINI_MODEL=gemini-2.0-flash
 
-Frontend `src/frontend/.env`:
+# ── JWT signing secret (change this before any real deployment) ───────
+JWT_SECRET=walletgo-hackathon-demo-secret-2024
 
-- `VITE_SUPABASE_URL`
-- `VITE_SUPABASE_ANON_KEY`
-- optional `VITE_API_URL`
+# ── Internal service URLs (change only if you modify the ports) ───────
+FORECAST_SERVICE_URL=http://localhost:8001
+AI_SERVICE_URL=http://localhost:8002
+DATA_SERVICE_URL=http://localhost:8003
 
-## API Surface (Gateway)
+# ── Database path (SQLite file location) ─────────────────────────────
+DATABASE_PATH=walletgo.db
+```
 
-- `/api/auth/*`
-- `/api/transactions/*`
-- `/api/forecast/*`
-- `/api/scenarios/*`
-- `/api/health/services`
+---
 
-Gateway docs: http://localhost:8080/docs
+## Demo Mode
 
-## Forecast and Scenario Output
+No account needed. Click **"Try Demo Account"** on the sign-in page.
 
-Forecast service returns:
+The demo user is pre-loaded with 18 realistic transactions (rent, salary, subscriptions, groceries, dining, transport) and generates a full 6-week forecast instantly.
 
-- `forecast_data`
-- `confidence`
-- `min_balance`
-- `min_balance_date`
-- `model` (`prophet-hybrid` or `fallback-hybrid`)
+**Demo credentials** (if signing in manually):
+```
+Email:    demo@radar.com
+Password: demo123
+Token:    demo-token  (use directly in API calls via Authorization: Bearer demo-token)
+```
 
-Scenario analysis returns transformed curves:
-
-- `low`
-- `likely`
-- `high`
-- AI explanation text
-
-## Statement Ingestion
-
-- Supported formats: CSV and PDF.
-- `test_statements/` includes 10 sample PDFs for quick demos/tests.
-- Parse modes:
-    - parse-only (demo / non-persistent)
-    - upload (authenticated + persistent)
-- Parser supports header normalization, encoding detection, PDF table extraction, regex fallback, category inference, and duplicate suppression via fingerprints.
+---
 
 ## Running Tests
 
 ```bash
+# Mac / Linux
+python -m pytest tests/ -v
+
+# Windows (PowerShell)
 python -m pytest tests/ -v
 ```
 
-## Tech Stack
+Tests are smoke tests that verify each service's core logic works in isolation without running the servers.
 
-Frontend:
-
-- React 18
-- Vite
-- Tailwind CSS
-- Recharts
-- Framer Motion
-- Axios
-- Supabase JS SDK
-
-Backend/services:
-
-- Python + FastAPI
-- httpx
-- PyJWT
-- Supabase Python SDK
-- pandas + numpy + prophet
-- google-generativeai
-- pdfplumber + chardet
+---
 
 ## Troubleshooting
 
-### Services not starting
+### Port already in use
 
-- Ensure ports `3000`, `8001`, `8002`, `8003`, and `8080` are free.
-- Check health endpoints:
-    - http://localhost:8001/health
-    - http://localhost:8002/health
-    - http://localhost:8003/health
-    - http://localhost:8080/health
+**Mac / Linux:**
+```bash
+# Find and kill the process on a port (e.g. 8080)
+lsof -ti :8080 | xargs kill -9
+```
 
-### Supabase errors
+**Windows (PowerShell):**
+```powershell
+# Find the process
+netstat -ano | findstr :8080
+# Kill it (replace <PID> with the number from the last column)
+taskkill /PID <PID> /F
+```
 
-- Verify `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` in root `.env`.
-- Apply `configs/supabase_schema.sql` if transaction table is missing.
+### `uvicorn` not found
 
-### AI sounds generic
+```bash
+# Mac / Linux
+pip3 install uvicorn
 
-- Set a valid `GEMINI_API_KEY` in root `.env`.
-- Without key, AI service intentionally uses fallback templates.
+# Windows
+pip install uvicorn
+# or
+python -m uvicorn ...
+```
+
+### Prophet installation fails
+
+Prophet requires C build tools. If `pip install prophet` fails:
+
+**Mac:**
+```bash
+brew install gcc
+pip install prophet
+```
+
+**Windows:**
+1. Install [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/)
+2. Select **"Desktop development with C++"** during install
+3. Re-run `pip install prophet`
+
+> If Prophet still fails, the app falls back to a heuristic forecaster automatically — you won't lose any functionality.
+
+### Frontend not loading
+
+```bash
+# Make sure Node 18+ is installed
+node --version
+
+# Clear node_modules and reinstall
+cd src/frontend
+rm -rf node_modules   # Windows: Remove-Item -Recurse node_modules
+npm install
+npm run dev
+```
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Frontend | React 18, Vite, Tailwind CSS, Recharts, Framer Motion |
+| API Gateway | Python FastAPI, httpx (async, retry logic), PyJWT |
+| Data Service | FastAPI, SQLAlchemy, SQLite, bcrypt |
+| Forecast Service | FastAPI, Facebook Prophet, pandas, numpy |
+| AI Service | FastAPI, Gemini SDK, template fallback |
+
+---
+
+## Team
+
+Built for NatWest Code for Purpose Hackathon 2026.

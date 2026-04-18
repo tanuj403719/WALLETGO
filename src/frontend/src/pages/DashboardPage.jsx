@@ -6,6 +6,7 @@ import {
   AreaChart,
   CartesianGrid,
   Legend,
+  LineChart,
   Line,
   ReferenceDot,
   ResponsiveContainer,
@@ -55,6 +56,8 @@ const MENU_ITEMS = [
 
 const SETTINGS_ITEM = { id: 'settings', path: '/dashboard/settings', icon: FiSettings, label: 'Settings' }
 const PERSONAS = ['professional', 'freelancer', 'student']
+const DEFAULT_ALERT_BUFFER = 500
+const ALERT_BUFFER_STORAGE_KEY = 'walletgo_alert_buffer'
 
 function formatDateLabel(rawDate) {
   const parsed = new Date(rawDate)
@@ -69,6 +72,13 @@ function toNumber(value, fallback = 0) {
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value))
+}
+
+function readStoredAlertBuffer() {
+  if (typeof window === 'undefined') return DEFAULT_ALERT_BUFFER
+  const raw = window.localStorage.getItem(ALERT_BUFFER_STORAGE_KEY)
+  const parsed = Number(raw)
+  return Number.isFinite(parsed) ? parsed : DEFAULT_ALERT_BUFFER
 }
 
 function normalizeForecastRows(rows) {
@@ -96,9 +106,62 @@ function normalizeForecastRows(rows) {
   })
 }
 
-function computeLiquidityScore(rows, alertBuffer = 500) {
+function readScenarioBalance(row, fallback = null) {
+  const raw = row?.balance ?? row?.predicted_balance
+  return toNumber(raw, fallback)
+}
+
+function normalizeIsoDate(rawDate) {
+  const parsed = new Date(rawDate)
+  if (Number.isNaN(parsed.getTime())) return null
+  return parsed.toISOString().slice(0, 10)
+}
+
+function buildAiInsight(payload, currency = 'USD', alertBuffer = DEFAULT_ALERT_BUFFER) {
+  const likelyRows = payload?.likely?.forecast_data || []
+  if (!likelyRows.length) {
+    return ''
+  }
+
+  const balances = likelyRows.map((row) => readScenarioBalance(row, 0))
+  const minBalance = Math.min(...balances)
+  const minIndex = balances.findIndex((value) => value === minBalance)
+  const minDateRaw = likelyRows[minIndex]?.date
+  const minDate = formatDateLabel(minDateRaw)
+
+  const riskyDays = balances.filter((value) => value < alertBuffer).length
+  const riskPct = Math.round((riskyDays / Math.max(balances.length, 1)) * 100)
+
+  const laterIndex = Math.min(minIndex + 7, likelyRows.length - 1)
+  const laterBalance = readScenarioBalance(likelyRows[laterIndex], minBalance)
+  const laterDate = formatDateLabel(likelyRows[laterIndex]?.date)
+
+  const impact = toNumber(payload?.likely?.net_difference, 0)
+  const direction = impact < 0 ? 'lose money' : impact > 0 ? 'gain money' : 'stay about the same'
+
+  return (
+    `💡 AI Insight: In this plan, you may ${direction}. `
+    + `Your lowest balance is around ${minDate}: ${formatMoney(minBalance, currency)}. `
+    + `${riskPct}% of days are in the risk zone (below ${formatMoney(alertBuffer, currency)}). `
+    + `By ${laterDate}, your balance is expected to be about ${formatMoney(laterBalance, currency)}.`
+  )
+}
+
+function countLowBufferDays(rows, alertBuffer) {
+  if (!Array.isArray(rows) || !rows.length) return 0
+  return rows.filter((row) => readScenarioBalance(row, 0) < alertBuffer).length
+}
+
+function computeLiquidityScore(rows, alertBuffer = DEFAULT_ALERT_BUFFER) {
   if (!Array.isArray(rows) || rows.length === 0) {
-    return { score: 50, label: 'Insufficient forecast data', tone: 'text-slate-700' }
+    return {
+      score: 50,
+      label: 'Insufficient forecast data',
+      tone: 'text-slate-700',
+      weather: 'Cloudy',
+      weatherKey: 'cloudy',
+      weatherClass: 'bg-amber-100 text-amber-800 border-amber-200',
+    }
   }
 
   const balances = rows.map((row) => toNumber(row.balance, 0))
@@ -126,9 +189,23 @@ function computeLiquidityScore(rows, alertBuffer = 500) {
 
   const score = Math.round(clamp((floorScore * 0.55) + (bufferScore * 0.25) + (stabilityScore * 0.2), 0, 100))
 
-  if (score >= 80) return { score, label: 'Smooth sailing for 6 weeks', tone: 'text-emerald-700' }
-  if (score >= 60) return { score, label: 'Caution: Tight spot ahead', tone: 'text-amber-700' }
-  return { score, label: 'Action needed this week', tone: 'text-red-700' }
+  let weather = 'Sunny'
+  let weatherKey = 'sunny'
+  let weatherClass = 'bg-emerald-100 text-emerald-800 border-emerald-200'
+  const gapFromBuffer = minBalance - alertBuffer
+  if (gapFromBuffer < 0) {
+    weather = 'Rainy'
+    weatherKey = 'rainy'
+    weatherClass = 'bg-pink-100 text-pink-800 border-pink-200'
+  } else if (gapFromBuffer <= 250) {
+    weather = 'Cloudy'
+    weatherKey = 'cloudy'
+    weatherClass = 'bg-amber-100 text-amber-800 border-amber-200'
+  }
+
+  if (score >= 80) return { score, label: 'Smooth sailing for 6 weeks', tone: 'text-emerald-700', weather, weatherKey, weatherClass }
+  if (score >= 60) return { score, label: 'Caution: Tight spot ahead', tone: 'text-amber-700', weather, weatherKey, weatherClass }
+  return { score, label: 'Action needed this week', tone: 'text-red-700', weather, weatherKey, weatherClass }
 }
 
 function getCurrentTab(pathname) {
@@ -271,24 +348,41 @@ export default function DashboardPage() {
   const [isMenuCollapsed, setIsMenuCollapsed] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [scenarioInput, setScenarioInput] = useState('')
+  const [scenarioTitle, setScenarioTitle] = useState('')
+  const [lastExecutedScenarioText, setLastExecutedScenarioText] = useState('')
   const [forecastRows, setForecastRows] = useState(DEFAULT_FORECAST)
   const [scenarioRows, setScenarioRows] = useState({ low: [], likely: [], high: [] })
+  const [latestScenarioPayload, setLatestScenarioPayload] = useState(null)
   const [isScenarioActive, setIsScenarioActive] = useState(false)
   const [isScenarioRunning, setIsScenarioRunning] = useState(false)
+  const [isScenarioSaving, setIsScenarioSaving] = useState(false)
+  const [leftScenarioId, setLeftScenarioId] = useState('')
+  const [rightScenarioId, setRightScenarioId] = useState('')
+  const [isComparingScenarios, setIsComparingScenarios] = useState(false)
   const [isForecastLoading, setIsForecastLoading] = useState(true)
   const [confidence, setConfidence] = useState(72)
   const [minBalance, setMinBalance] = useState(2120)
   const [minBalanceDate, setMinBalanceDate] = useState('May 8')
   const [scenarioNote, setScenarioNote] = useState('Try a scenario to overlay low/likely/high dotted lines on the graph.')
+  const [scenarioInsight, setScenarioInsight] = useState('')
   const [currency, setCurrency] = useState('USD')
-  const [alertBuffer, setAlertBuffer] = useState(500)
+  const [alertBuffer, setAlertBuffer] = useState(() => readStoredAlertBuffer())
   const [theme, setTheme] = useState(() => localStorage.getItem('radar_theme') || 'dark')
   const [persona, setPersona] = useState('professional')
   const [isTransactionCheckLoading, setIsTransactionCheckLoading] = useState(false)
   const [hasTransactions, setHasTransactions] = useState(null)
 
   const { signOut, user, isAuthenticated } = useAuth()
-  const { generateForecast, runScenario, clearEphemeralTransactions } = useForecast()
+  const {
+    generateForecast,
+    runScenario,
+    clearEphemeralTransactions,
+    savedScenarios,
+    scenarioComparison,
+    loadSavedScenarios,
+    saveScenario,
+    compareSavedScenarios,
+  } = useForecast()
   const navigate = useNavigate()
   const location = useLocation()
 
@@ -315,6 +409,18 @@ export default function DashboardPage() {
     localStorage.setItem('radar_theme', theme)
     document.documentElement.setAttribute('data-theme', theme)
   }, [theme])
+
+  useEffect(() => {
+    localStorage.setItem(ALERT_BUFFER_STORAGE_KEY, String(alertBuffer))
+  }, [alertBuffer])
+
+  useEffect(() => {
+    if (!latestScenarioPayload) {
+      setScenarioInsight('')
+      return
+    }
+    setScenarioInsight(buildAiInsight(latestScenarioPayload, currency, alertBuffer))
+  }, [latestScenarioPayload, currency, alertBuffer])
 
   useEffect(() => {
     if (currentTab === 'settings' && !isAuthenticated) {
@@ -389,6 +495,12 @@ export default function DashboardPage() {
     fetchForecast()
   }, [fetchForecast, hasTransactions, isAuthenticated, isTransactionCheckLoading])
 
+  useEffect(() => {
+    loadSavedScenarios(12).catch(() => {
+      // Ignore load errors here; save/compare actions will surface explicit toasts.
+    })
+  }, [loadSavedScenarios])
+
   const handleStatementUploaded = useCallback(async () => {
     if (isAuthenticated) {
       setHasTransactions(true)
@@ -398,24 +510,26 @@ export default function DashboardPage() {
   }, [fetchForecast, isAuthenticated])
 
   const scenarioData = useMemo(() => {
-    const lowMap = new Map(scenarioRows.low.map((row) => [row.date, toNumber(row.balance, null)]))
-    const likelyMap = new Map(scenarioRows.likely.map((row) => [row.date, toNumber(row.balance, null)]))
-    const highMap = new Map(scenarioRows.high.map((row) => [row.date, toNumber(row.balance, null)]))
+    const lowMap = new Map(scenarioRows.low.map((row) => [row.date, readScenarioBalance(row, null)]))
+    const likelyMap = new Map(scenarioRows.likely.map((row) => [row.date, readScenarioBalance(row, null)]))
+    const highMap = new Map(scenarioRows.high.map((row) => [row.date, readScenarioBalance(row, null)]))
 
     return forecastRows.map((row, idx) => {
       const lowByDate = lowMap.get(row.rawDate)
       const likelyByDate = likelyMap.get(row.rawDate)
       const highByDate = highMap.get(row.rawDate)
 
-      const lowByIndex = scenarioRows.low[idx] ? toNumber(scenarioRows.low[idx].balance, row.balance) : null
-      const likelyByIndex = scenarioRows.likely[idx] ? toNumber(scenarioRows.likely[idx].balance, row.balance) : null
-      const highByIndex = scenarioRows.high[idx] ? toNumber(scenarioRows.high[idx].balance, row.balance) : null
+      const lowByIndex = scenarioRows.low[idx] ? readScenarioBalance(scenarioRows.low[idx], row.balance) : null
+      const likelyByIndex = scenarioRows.likely[idx] ? readScenarioBalance(scenarioRows.likely[idx], row.balance) : null
+      const highByIndex = scenarioRows.high[idx] ? readScenarioBalance(scenarioRows.high[idx], row.balance) : null
 
       return {
         ...row,
         scenarioLow: lowByDate ?? lowByIndex ?? row.balance,
         scenarioLikely: likelyByDate ?? likelyByIndex ?? row.balance,
         scenarioHigh: highByDate ?? highByIndex ?? row.balance,
+        baselinePlot: toNumber(row.balance, 0),
+        scenarioPlot: toNumber(likelyByDate ?? likelyByIndex ?? row.balance, 0),
         inflows: Math.max(0, row.balance - toNumber(forecastRows[idx - 1]?.balance, row.balance)),
         outflows: Math.max(0, toNumber(forecastRows[idx - 1]?.balance, row.balance) - row.balance),
         marker: getTimelineEvent(row.rawDate),
@@ -488,12 +602,84 @@ export default function DashboardPage() {
     return [Math.floor(minValue - pad), Math.ceil(maxValue + pad)]
   }, [scenarioData])
 
+  const comparisonChartData = useMemo(() => {
+    const leftRows = scenarioComparison?.left?.likely?.forecast_data || []
+    const rightRows = scenarioComparison?.right?.likely?.forecast_data || []
+    if (!leftRows.length && !rightRows.length) return []
+
+    const allDatesValid = [...leftRows, ...rightRows].every((row) => normalizeIsoDate(row?.date))
+
+    if (allDatesValid) {
+      const leftMap = new Map(
+        leftRows.map((row) => [normalizeIsoDate(row.date), toNumber(row.predicted_balance ?? row.balance, 0)])
+      )
+      const rightMap = new Map(
+        rightRows.map((row) => [normalizeIsoDate(row.date), toNumber(row.predicted_balance ?? row.balance, 0)])
+      )
+      const allDates = Array.from(new Set([...leftMap.keys(), ...rightMap.keys()]))
+        .filter(Boolean)
+        .sort((a, b) => a.localeCompare(b))
+
+      return allDates.map((date) => ({
+        date: formatDateLabel(date),
+        left: leftMap.has(date) ? leftMap.get(date) : null,
+        right: rightMap.has(date) ? rightMap.get(date) : null,
+      }))
+    }
+
+    const length = Math.max(leftRows.length, rightRows.length)
+    return Array.from({ length }, (_, idx) => ({
+      date: formatDateLabel(leftRows[idx]?.date || rightRows[idx]?.date || `Day ${idx + 1}`),
+      left: idx < leftRows.length ? toNumber(leftRows[idx]?.predicted_balance ?? leftRows[idx]?.balance, 0) : null,
+      right: idx < rightRows.length ? toNumber(rightRows[idx]?.predicted_balance ?? rightRows[idx]?.balance, 0) : null,
+    }))
+  }, [scenarioComparison])
+
+  const leftScenarioLabel = useMemo(() => {
+    const match = savedScenarios.find((item) => String(item.id) === String(leftScenarioId))
+    return match?.title || match?.description || 'Left scenario'
+  }, [savedScenarios, leftScenarioId])
+
+  const rightScenarioLabel = useMemo(() => {
+    const match = savedScenarios.find((item) => String(item.id) === String(rightScenarioId))
+    return match?.title || match?.description || 'Right scenario'
+  }, [savedScenarios, rightScenarioId])
+
+  const comparisonLowBufferDays = useMemo(() => {
+    const leftRows = scenarioComparison?.left?.likely?.forecast_data || []
+    const rightRows = scenarioComparison?.right?.likely?.forecast_data || []
+
+    const left = leftRows.length
+      ? countLowBufferDays(leftRows, alertBuffer)
+      : (scenarioComparison?.comparison?.left_low_buffer_days ?? 0)
+    const right = rightRows.length
+      ? countLowBufferDays(rightRows, alertBuffer)
+      : (scenarioComparison?.comparison?.right_low_buffer_days ?? 0)
+
+    return { left, right }
+  }, [scenarioComparison, alertBuffer])
+
+  const scenarioLikelyStroke = useMemo(() => {
+    const color = String(latestScenarioPayload?.likely?.line_color || '').toLowerCase()
+    if (color === 'red') return '#ef4444'
+    if (color === 'green') return '#22c55e'
+
+    if (!scenarioData.length) return '#f8fafc'
+    const last = scenarioData[scenarioData.length - 1]
+    const delta = toNumber(last?.scenarioLikely, 0) - toNumber(last?.balance, 0)
+    if (delta < 0) return '#ef4444'
+    if (delta > 0) return '#22c55e'
+    return '#f8fafc'
+  }, [latestScenarioPayload, scenarioData])
+
   const handleSignOut = async () => {
+    localStorage.removeItem(ALERT_BUFFER_STORAGE_KEY)
     await signOut()
     navigate('/signin')
   }
 
   const handleExitDemo = () => {
+    localStorage.removeItem(ALERT_BUFFER_STORAGE_KEY)
     clearEphemeralTransactions()
     navigate('/')
   }
@@ -518,13 +704,69 @@ export default function DashboardPage() {
       }
 
       setScenarioRows({ low: lowRows, likely: likelyRows, high: highRows })
+      setLatestScenarioPayload(payload)
+      setLastExecutedScenarioText(trimmed)
       setIsScenarioActive(true)
       setScenarioNote(payload.explanation || 'Scenario applied successfully.')
+      setScenarioInsight(buildAiInsight(payload, currency, alertBuffer))
       toast.success('Scenario updated on chart')
     } catch (error) {
+      setScenarioInsight('')
       toast.error('Failed to run scenario. Please try again.')
     } finally {
       setIsScenarioRunning(false)
+    }
+  }
+
+  const handleSaveScenario = async () => {
+    if (!latestScenarioPayload || !isScenarioActive) {
+      toast.error('Run a scenario first, then save it.')
+      return
+    }
+
+    setIsScenarioSaving(true)
+    try {
+      const trimmedTitle = scenarioTitle.trim()
+      const executedDescription = (
+        latestScenarioPayload?.intent?.description
+        || lastExecutedScenarioText
+        || scenarioInput.trim()
+        || 'What-if scenario'
+      )
+      await saveScenario({
+        title: trimmedTitle || undefined,
+        description: executedDescription,
+        language,
+        analysis: latestScenarioPayload,
+      })
+      await loadSavedScenarios(12)
+      setScenarioTitle('')
+      toast.success('Scenario saved')
+    } catch (error) {
+      toast.error('Could not save scenario')
+    } finally {
+      setIsScenarioSaving(false)
+    }
+  }
+
+  const handleCompareScenarios = async () => {
+    if (!leftScenarioId || !rightScenarioId) {
+      toast.error('Select two saved scenarios to compare')
+      return
+    }
+    if (leftScenarioId === rightScenarioId) {
+      toast.error('Pick two different scenarios')
+      return
+    }
+
+    setIsComparingScenarios(true)
+    try {
+      await compareSavedScenarios(leftScenarioId, rightScenarioId)
+      toast.success('Scenario comparison ready')
+    } catch (error) {
+      toast.error('Could not compare selected scenarios')
+    } finally {
+      setIsComparingScenarios(false)
     }
   }
 
@@ -699,115 +941,210 @@ export default function DashboardPage() {
   )
 
   const renderSandbox = () => (
-    <div className="grid xl:grid-cols-3 gap-6">
-      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="sandbox-panel glass-card xl:col-span-2 p-6">
-        <h2 className="text-xl font-bold mb-4 text-slate-900">What-If Sandbox</h2>
-        <div className="flex flex-wrap gap-2 mb-4">
-          {[
-            { code: 'en', label: '🌐 English' },
-            { code: 'hinglish', label: '🇮🇳 Hinglish' },
-            { code: 'hi', label: '🇮🇳 Hindi' },
-          ].map((lang) => (
-            <button
-              key={lang.code}
-              onClick={() => setLanguage(lang.code)}
-              className={`sandbox-chip px-3 py-1 rounded-full text-sm font-medium transition ${language === lang.code ? 'sandbox-chip-active' : ''}`}
-            >
-              {lang.label}
-            </button>
-          ))}
-        </div>
-
-        <div className="flex gap-2 mb-4">
-          <input
-            type="text"
-            value={scenarioInput}
-            onChange={(e) => setScenarioInput(e.target.value)}
-            placeholder={LANGUAGE_TEXTS[language].placeholder}
-            className="sandbox-input flex-1 px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
-          />
-        </div>
-
-        <button
-          onClick={() => evaluateScenario(scenarioInput)}
-          disabled={isScenarioRunning}
-          className="w-full md:w-auto px-6 py-2.5 primary-cta"
-        >
-          {isScenarioRunning ? 'Running...' : 'Run Scenario'}
-        </button>
-
-        <p className="sandbox-note mt-5 text-sm text-gray-700">{scenarioNote}</p>
-
-        <div className="mt-5 rounded-xl border border-slate-700/40 bg-slate-950/30 p-4">
-          <div className="flex items-center justify-between mb-3">
-            <p className="text-xs uppercase tracking-[0.14em] text-slate-300">Scenario Plot</p>
-            {isScenarioActive && <span className="text-xs text-slate-300">Low / Likely / High vs Projected</span>}
+    <div className="space-y-6">
+      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="grid xl:grid-cols-3 gap-6 items-start">
+        <section className="sandbox-panel glass-card xl:col-span-2 p-6 space-y-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="text-xl font-bold text-slate-900">What-If Sandbox</h2>
+            <div className="flex flex-wrap gap-2">
+              {[
+                { code: 'en', label: '🌐 English' },
+                { code: 'hinglish', label: '🇮🇳 Hinglish' },
+                { code: 'hi', label: '🇮🇳 Hindi' },
+              ].map((lang) => (
+                <button
+                  key={lang.code}
+                  onClick={() => setLanguage(lang.code)}
+                  className={`sandbox-chip px-3 py-1 rounded-full text-sm font-medium transition ${language === lang.code ? 'sandbox-chip-active' : ''}`}
+                >
+                  {lang.label}
+                </button>
+              ))}
+            </div>
           </div>
 
-          {isScenarioActive ? (
-            <ResponsiveContainer width="100%" height={260}>
-              <AreaChart data={scenarioData}>
-                <CartesianGrid strokeDasharray="3 3" stroke={isDark ? 'rgba(148,163,184,0.22)' : '#e2e8f0'} />
-                <XAxis dataKey="date" stroke={isDark ? '#cbd5e1' : '#475569'} />
-                <YAxis stroke={isDark ? '#cbd5e1' : '#475569'} domain={scenarioPlotDomain} />
-                <Tooltip content={<ForecastTooltip currency={currency} />} />
-                <Legend
-                  payload={chartLegendPayload}
-                  iconType="line"
-                  wrapperStyle={{ fontSize: '12px', color: isDark ? '#cbd5e1' : '#475569' }}
-                />
-                <Area type="monotone" dataKey="balance" stroke="#2563eb" strokeWidth={1.8} strokeDasharray="6 4" fillOpacity={0.05} fill="#2563eb" />
-                <Line
-                  type="monotone"
-                  dataKey="scenarioLow"
-                  stroke="#ef4444"
-                  strokeWidth={3.2}
-                  dot={{ r: 2.4, fill: '#ef4444', stroke: '#fff', strokeWidth: 0.8 }}
-                  activeDot={{ r: 4 }}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="scenarioLikely"
-                  stroke={isDark ? '#f8fafc' : '#111827'}
-                  strokeWidth={3.6}
-                  dot={{ r: 2.4, fill: isDark ? '#f8fafc' : '#111827', stroke: '#60a5fa', strokeWidth: 0.8 }}
-                  activeDot={{ r: 4.2 }}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="scenarioHigh"
-                  stroke="#22c55e"
-                  strokeWidth={3.2}
-                  dot={{ r: 2.4, fill: '#22c55e', stroke: '#fff', strokeWidth: 0.8 }}
-                  activeDot={{ r: 4 }}
-                />
-              </AreaChart>
-            </ResponsiveContainer>
-          ) : (
-            <p className="text-sm text-slate-400">
-              Run a scenario to generate the comparison plot here.
-            </p>
-          )}
-        </div>
+          <div className="grid gap-3 md:grid-cols-[1fr_auto]">
+            <input
+              type="text"
+              value={scenarioInput}
+              onChange={(e) => setScenarioInput(e.target.value)}
+              placeholder={LANGUAGE_TEXTS[language].placeholder}
+              className="sandbox-input w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
+            />
+            <button
+              onClick={() => evaluateScenario(scenarioInput)}
+              disabled={isScenarioRunning}
+              className="w-full md:w-auto px-6 py-2.5 primary-cta"
+            >
+              {isScenarioRunning ? 'Running...' : 'Run Scenario'}
+            </button>
+          </div>
 
-        <div className="soft-panel mt-5 rounded-xl p-4">
-          <p className="text-xs uppercase tracking-[0.12em] text-slate-500 mb-2">How To Use</p>
-          <p className="text-sm text-slate-700">Type your own scenario in natural language, then click Run Scenario.</p>
-          <p className="text-sm text-slate-700 mt-1">Example style: "What happens if my salary is 5 days late?" or "What if I spend $800 next week?"</p>
-          <p className="text-sm text-slate-700 mt-1">The chart overlays low, likely, and high dotted lines to show possible outcomes.</p>
-        </div>
+          <div className="grid gap-3 md:grid-cols-[1fr_auto]">
+            <input
+              type="text"
+              value={scenarioTitle}
+              onChange={(e) => setScenarioTitle(e.target.value)}
+              placeholder="Optional title (e.g., Buy car now)"
+              className="sandbox-input w-full px-4 py-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
+            />
+            <button
+              onClick={handleSaveScenario}
+              disabled={!isScenarioActive || isScenarioSaving}
+              className="w-full md:w-auto px-5 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-800 font-medium hover:bg-slate-50 disabled:opacity-50"
+            >
+              {isScenarioSaving ? 'Saving...' : 'Save Scenario'}
+            </button>
+          </div>
+
+          <p className="sandbox-note text-sm text-gray-700">{scenarioNote}</p>
+          {!!scenarioInsight && (
+            <div className="rounded-xl border border-teal-300/40 bg-teal-500/10 px-4 py-3 text-sm text-teal-100">
+              {scenarioInsight}
+            </div>
+          )}
+        </section>
+
+        <aside className="guide-card rounded-2xl p-6 text-slate-900 border border-sky-200 bg-gradient-to-br from-sky-50 via-cyan-50 to-teal-50 shadow-[0_14px_30px_rgba(0,0,0,0.08)]">
+          <p className="text-xs uppercase tracking-[0.14em] text-sky-700 mb-4">Quick Guide</p>
+          <div className="space-y-3 text-sm">
+            <p>1. Type a scenario and run it</p>
+            <p>2. Give it a title and save it</p>
+            <p>3. Compare any two saved futures</p>
+          </div>
+          <div className="mt-5 rounded-xl bg-white border border-sky-200 p-4 text-sm space-y-2">
+            <p>Red dotted line: downside</p>
+            <p>Dark dotted line: likely path</p>
+            <p>Green dotted line: upside</p>
+          </div>
+        </aside>
       </motion.div>
 
-      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="guide-card rounded-2xl p-6 text-slate-900 border border-sky-200 bg-gradient-to-br from-sky-50 via-cyan-50 to-teal-50 shadow-[0_14px_30px_rgba(0,0,0,0.08)]">
-        <p className="text-xs uppercase tracking-[0.14em] text-sky-700 mb-4">Scenario Overlay Guide</p>
-        <div className="space-y-3 text-sm">
-          <p>Red dotted line: conservative downside</p>
-          <p>Dark dotted line: most likely path</p>
-          <p>Green dotted line: optimistic upside</p>
+      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="rounded-xl border border-slate-700/40 bg-slate-950/30 p-4">
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-xs uppercase tracking-[0.14em] text-slate-300">Scenario Plot</p>
+          {isScenarioActive && <span className="text-xs text-slate-300">Original (white) vs Scenario (red/green)</span>}
         </div>
-        <div className="mt-6 rounded-xl bg-white border border-sky-200 p-4 text-sm">
-          Use this before large spends, travel bookings, or delayed salary periods.
+
+        {isScenarioActive ? (
+          <ResponsiveContainer width="100%" height={300}>
+            <LineChart data={scenarioData}>
+              <CartesianGrid strokeDasharray="3 3" stroke={isDark ? 'rgba(148,163,184,0.22)' : '#e2e8f0'} />
+              <XAxis dataKey="date" stroke={isDark ? '#cbd5e1' : '#475569'} />
+              <YAxis stroke={isDark ? '#cbd5e1' : '#475569'} domain={scenarioPlotDomain} />
+              <Tooltip content={<ForecastTooltip currency={currency} />} />
+              <Legend iconType="line" wrapperStyle={{ fontSize: '12px', color: isDark ? '#cbd5e1' : '#475569' }} />
+              <Line
+                type="monotone"
+                dataKey="baselinePlot"
+                name="Original (baseline)"
+                stroke="#f8fafc"
+                strokeWidth={2.6}
+                connectNulls
+                dot={false}
+                isAnimationActive={false}
+                activeDot={{ r: 4.2 }}
+              />
+              <Line
+                type="monotone"
+                dataKey="scenarioPlot"
+                name="Scenario"
+                stroke={scenarioLikelyStroke}
+                strokeWidth={3.4}
+                connectNulls
+                dot={false}
+                isAnimationActive={false}
+                activeDot={{ r: 4.2 }}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        ) : (
+          <p className="text-sm text-slate-400">Run a scenario to generate the plot.</p>
+        )}
+      </motion.div>
+
+      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="soft-panel rounded-xl p-4 space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-xs uppercase tracking-[0.12em] text-slate-500">Saved Scenario Comparison</p>
+          <button
+            onClick={handleCompareScenarios}
+            disabled={isComparingScenarios || !leftScenarioId || !rightScenarioId}
+            className="px-5 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-800 font-medium hover:bg-slate-50 disabled:opacity-50"
+          >
+            {isComparingScenarios ? 'Comparing...' : 'Compare Scenarios'}
+          </button>
         </div>
+
+        <div className="grid gap-2 md:grid-cols-2">
+          <select
+            value={leftScenarioId}
+            onChange={(e) => setLeftScenarioId(e.target.value)}
+            className="rounded-lg border border-slate-300 px-3 py-2 bg-white"
+          >
+            <option value="">Select left scenario</option>
+            {savedScenarios.map((item) => (
+              <option key={`left-${item.id}`} value={item.id}>
+                {item.title || item.description}
+              </option>
+            ))}
+          </select>
+          <select
+            value={rightScenarioId}
+            onChange={(e) => setRightScenarioId(e.target.value)}
+            className="rounded-lg border border-slate-300 px-3 py-2 bg-white"
+          >
+            <option value="">Select right scenario</option>
+            {savedScenarios.map((item) => (
+              <option key={`right-${item.id}`} value={item.id}>
+                {item.title || item.description}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {scenarioComparison?.comparison && (
+          <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-800 space-y-1">
+            <p>
+              Winner: <strong>{scenarioComparison.comparison.winner}</strong>
+            </p>
+            <p>
+              Final balance diff: <strong>{formatMoney(scenarioComparison.comparison.difference, currency)}</strong>
+            </p>
+            <p>
+              Left final: {formatMoney(scenarioComparison.comparison.left_final_balance, currency)} | Right final: {formatMoney(scenarioComparison.comparison.right_final_balance, currency)}
+            </p>
+            <p>
+              Left risk score: <strong>{scenarioComparison.comparison.left_risk_adjusted_score}</strong> | Right risk score: <strong>{scenarioComparison.comparison.right_risk_adjusted_score}</strong>
+            </p>
+            <p>
+              Overdraft days: Left <strong>{scenarioComparison.comparison.left_negative_days}</strong> | Right <strong>{scenarioComparison.comparison.right_negative_days}</strong>
+            </p>
+            <p>
+              Low-buffer days (&lt; {formatMoney(alertBuffer, currency)}): Left <strong>{comparisonLowBufferDays.left}</strong> | Right <strong>{comparisonLowBufferDays.right}</strong>
+            </p>
+            <p>
+              Net scenario impact: Left <strong>{formatMoney(scenarioComparison.comparison.left_net_difference, currency)}</strong> | Right <strong>{formatMoney(scenarioComparison.comparison.right_net_difference, currency)}</strong>
+            </p>
+            <p>{scenarioComparison.summary_text}</p>
+          </div>
+        )}
+
+        {comparisonChartData.length > 0 && (
+          <div className="rounded-xl border border-slate-200 bg-white p-3">
+            <p className="text-xs uppercase tracking-[0.12em] text-slate-500 mb-2">Graphical comparison (likely path)</p>
+            <ResponsiveContainer width="100%" height={240}>
+              <LineChart data={comparisonChartData}>
+                <CartesianGrid strokeDasharray="3 3" stroke={isDark ? 'rgba(148,163,184,0.22)' : '#e2e8f0'} />
+                <XAxis dataKey="date" stroke={isDark ? '#cbd5e1' : '#475569'} />
+                <YAxis stroke={isDark ? '#cbd5e1' : '#475569'} />
+                <Tooltip content={<ForecastTooltip currency={currency} />} />
+                <Legend />
+                <Line type="monotone" dataKey="left" name={leftScenarioLabel} stroke="#2563eb" strokeWidth={3} dot={false} />
+                <Line type="monotone" dataKey="right" name={rightScenarioLabel} stroke="#f97316" strokeWidth={3} dot={false} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        )}
       </motion.div>
     </div>
   )
@@ -1033,7 +1370,9 @@ export default function DashboardPage() {
               ))}
             </select>
             <div className="rounded-full px-3 py-1 text-sm bg-lime-100 text-lime-800 border border-lime-200">{greenZoneStreak}-day green zone streak</div>
-            <div className="weather-pill rounded-full px-3 py-1 text-sm bg-emerald-100 text-emerald-800 border border-emerald-200">Financial Weather: Sunny</div>
+            <div className={`weather-pill weather-${liquidity.weatherKey} rounded-full px-3 py-1 text-sm border ${liquidity.weatherClass}`}>
+              Financial Weather: {liquidity.weather}
+            </div>
           </div>
         </div>
 

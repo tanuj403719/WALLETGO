@@ -9,7 +9,7 @@ import os
 import re
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from client import forward
@@ -24,6 +24,25 @@ router = APIRouter(prefix="/api/scenarios", tags=["scenarios"])
 
 class ScenarioRequest(BaseModel):
     description: str
+    language: str = "en"
+    ephemeral_transactions: Optional[List[Dict[str, Any]]] = None
+
+
+class SaveScenarioRequest(BaseModel):
+    title: Optional[str] = None
+    description: str
+    language: str = "en"
+    analysis: Optional[Dict[str, Any]] = None
+    low: Optional[Dict[str, Any]] = None
+    likely: Optional[Dict[str, Any]] = None
+    high: Optional[Dict[str, Any]] = None
+    explanation: str = ""
+    intent: Optional[Dict[str, Any]] = None
+
+
+class TargetBalanceRequest(BaseModel):
+    target_balance: float
+    horizon_days: int = 90
     language: str = "en"
     ephemeral_transactions: Optional[List[Dict[str, Any]]] = None
 
@@ -67,6 +86,113 @@ def _build_transaction_context(transactions: List[Dict[str, Any]]) -> Dict[str, 
         "median_daily_spend": round(_infer_daily_spend(transactions), 2),
         "total_inflow": round(inflow, 2),
         "total_outflow": round(outflow, 2),
+    }
+
+
+def _normalize_category(value: str) -> str:
+    key = " ".join(str(value or "general").strip().lower().split())
+    if not key:
+        return "general"
+
+    aliases = {
+        "restaurant": "food",
+        "dining": "food",
+        "takeout": "food",
+        "coffee": "food",
+        "salary": "income",
+        "paycheck": "income",
+        "shopping": "shopping",
+        "groceries": "groceries",
+        "grocery": "groceries",
+        "subscriptions": "subscriptions",
+        "bills": "bills",
+    }
+    return aliases.get(key, key)
+
+
+def _category_cut_cap(category: str) -> float:
+    caps = {
+        "food": 0.35,
+        "shopping": 0.35,
+        "entertainment": 0.35,
+        "subscriptions": 0.50,
+        "groceries": 0.15,
+        "transport": 0.20,
+        "bills": 0.10,
+        "rent": 0.05,
+        "emi": 0.05,
+        "insurance": 0.05,
+    }
+    return caps.get(category, 0.20)
+
+
+def _build_target_balance_plan(
+    transactions: List[Dict[str, Any]],
+    target_balance: float,
+    horizon_days: int,
+    projected_balance: float,
+) -> Dict[str, Any]:
+    safe_horizon = max(7, min(horizon_days, 365))
+    target_gap = round(max(0.0, float(target_balance) - float(projected_balance)), 2)
+    monthly_required = round(target_gap / (safe_horizon / 30.5), 2) if target_gap > 0 else 0.0
+
+    expense_by_category: Dict[str, float] = {}
+    for tx in transactions or []:
+        amount = float(tx.get("amount", 0) or 0)
+        if amount >= 0:
+            continue
+        category = _normalize_category(str(tx.get("category") or "general"))
+        expense_by_category[category] = expense_by_category.get(category, 0.0) + abs(amount)
+
+    if transactions:
+        dates = [str(tx.get("date") or "") for tx in transactions if tx.get("date")]
+        days_observed = max(30, len(set(dates))) if dates else 30
+    else:
+        days_observed = 30
+
+    category_monthly: List[Dict[str, Any]] = []
+    for category, total in expense_by_category.items():
+        monthly_spend = (total / days_observed) * 30.5
+        max_cut = monthly_spend * _category_cut_cap(category)
+        category_monthly.append(
+            {
+                "category": category,
+                "monthly_spend": round(monthly_spend, 2),
+                "max_recommended_cut": round(max_cut, 2),
+            }
+        )
+    category_monthly.sort(key=lambda item: item.get("max_recommended_cut", 0.0), reverse=True)
+
+    remaining = monthly_required
+    recommendations: List[Dict[str, Any]] = []
+    for item in category_monthly:
+        if remaining <= 0:
+            break
+        proposed = min(item["max_recommended_cut"], remaining)
+        if proposed <= 0:
+            continue
+        monthly_spend = max(item["monthly_spend"], 1.0)
+        cut_percent = min(80.0, (proposed / monthly_spend) * 100.0)
+        recommendations.append(
+            {
+                "category": item["category"],
+                "recommended_cut_monthly": round(proposed, 2),
+                "recommended_cut_daily": round(proposed / 30.5, 2),
+                "cut_percent": round(cut_percent, 1),
+            }
+        )
+        remaining = round(max(0.0, remaining - proposed), 2)
+
+    achievable = target_gap <= 0 or remaining <= 0
+    return {
+        "target_balance": round(float(target_balance), 2),
+        "horizon_days": safe_horizon,
+        "projected_balance_without_changes": round(float(projected_balance), 2),
+        "target_gap": target_gap,
+        "required_monthly_savings": monthly_required,
+        "recommended_cuts": recommendations,
+        "is_target_achievable_with_recommended_cuts": achievable,
+        "uncovered_monthly_gap": remaining,
     }
 
 
@@ -263,6 +389,126 @@ async def analyze_scenario(request: ScenarioRequest, user_id: str = Depends(reso
         **scenario_results,
         "explanation": explanation.get("explanation", ""),
         "intent": intent,
+    }
+
+
+@router.post("/save")
+async def save_scenario(request: SaveScenarioRequest, user_id: str = Depends(resolve_user_id)):
+    analysis = request.analysis or {}
+    low = request.low or analysis.get("low")
+    likely = request.likely or analysis.get("likely")
+    high = request.high or analysis.get("high")
+    explanation = request.explanation or analysis.get("explanation", "")
+    intent = request.intent or analysis.get("intent")
+
+    intent_description = ""
+    if isinstance(intent, dict):
+        intent_description = str(intent.get("description") or "").strip()
+    resolved_description = intent_description or str(request.description or "").strip() or "What-if scenario"
+
+    if not isinstance(low, dict) or not isinstance(likely, dict) or not isinstance(high, dict):
+        raise HTTPException(
+            status_code=400,
+            detail="Provide scenario payload via analysis or low/likely/high objects.",
+        )
+
+    return await forward(
+        "POST",
+        f"{DATA_SERVICE_URL}/api/scenarios/save",
+        json={
+            "user_id": user_id,
+            "title": request.title,
+            "description": resolved_description,
+            "language": request.language,
+            "low_result": low,
+            "likely_result": likely,
+            "high_result": high,
+            "explanation": explanation,
+            "intent": intent,
+        },
+    )
+
+
+@router.get("/saved")
+async def list_saved_scenarios(
+    limit: int = 10,
+    user_id: str = Depends(resolve_user_id),
+):
+    return await forward(
+        "GET",
+        f"{DATA_SERVICE_URL}/api/scenarios/saved",
+        params={"user_id": user_id, "limit": limit},
+    )
+
+
+@router.get("/saved/{scenario_id}")
+async def get_saved_scenario(scenario_id: str, user_id: str = Depends(resolve_user_id)):
+    return await forward(
+        "GET",
+        f"{DATA_SERVICE_URL}/api/scenarios/saved/{scenario_id}",
+        params={"user_id": user_id},
+    )
+
+
+@router.get("/compare")
+async def compare_saved_scenarios(
+    left_id: str,
+    right_id: str,
+    user_id: str = Depends(resolve_user_id),
+):
+    return await forward(
+        "GET",
+        f"{DATA_SERVICE_URL}/api/scenarios/compare",
+        params={"user_id": user_id, "left_id": left_id, "right_id": right_id},
+    )
+
+
+@router.post("/target-balance")
+async def plan_target_balance(request: TargetBalanceRequest, user_id: str = Depends(resolve_user_id)):
+    safe_horizon = max(7, min(request.horizon_days, 365))
+
+    if request.ephemeral_transactions:
+        transactions = request.ephemeral_transactions
+    else:
+        tx_data = await forward(
+            "GET",
+            f"{DATA_SERVICE_URL}/api/transactions/list",
+            params={"user_id": user_id},
+        )
+        transactions = tx_data.get("transactions") or tx_data.get("items", [])
+
+    base_forecast = await forward(
+        "POST",
+        f"{FORECAST_SERVICE_URL}/api/forecast/generate",
+        json={"transactions": transactions, "days": safe_horizon},
+    )
+    forecast_rows = base_forecast.get("forecast_data", [])
+    projected_balance = 0.0
+    if forecast_rows:
+        last = forecast_rows[-1]
+        projected_balance = float(last.get("predicted_balance", last.get("balance", 0.0)) or 0.0)
+
+    plan = _build_target_balance_plan(
+        transactions=transactions,
+        target_balance=request.target_balance,
+        horizon_days=safe_horizon,
+        projected_balance=projected_balance,
+    )
+
+    advice = await forward(
+        "POST",
+        f"{AI_SERVICE_URL}/api/ai/target-balance-advice",
+        json={
+            "target_plan": plan,
+            "language": request.language,
+            "transaction_context": _build_transaction_context(transactions),
+        },
+    )
+
+    return {
+        "target_plan": plan,
+        "advice": advice.get("advice", ""),
+        "language": request.language,
     }
 
 

@@ -24,3 +24,9 @@ class ScenarioExplanationRequest(BaseModel):
     scenario_results: Dict
     original_forecast: Dict
     language: str = "en"
+
+
+class TargetBalanceAdviceRequest(BaseModel):
+    target_plan: Dict
+    language: str = "en"
+    transaction_context: Optional[Dict] = None

@@ -37,6 +37,13 @@ export const scenarioAPI = {
       language,
       ...(ephemeralTransactions?.length ? { ephemeral_transactions: ephemeralTransactions } : {}),
     }),
+  save: (payload) => api.post('/api/scenarios/save', payload),
+  getSaved: (limit = 10) => api.get(`/api/scenarios/saved?limit=${limit}`),
+  getSavedById: (scenarioId) => api.get(`/api/scenarios/saved/${scenarioId}`),
+  compare: (leftId, rightId) =>
+    api.get(
+      `/api/scenarios/compare?left_id=${encodeURIComponent(leftId)}&right_id=${encodeURIComponent(rightId)}`
+    ),
   getSuggestions: (language = 'en') =>
     api.get(`/api/scenarios/suggestions?language=${language}`),
 }

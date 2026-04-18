@@ -482,3 +482,93 @@ def generate_scenario_explanation(
         f"Under this scenario, the minimum likely balance is about ${balance} on {date}, which {direction_min} the base-case minimum by ${abs(min_delta)}. "
         f"By the end of the forecast window, net impact versus base is about ${end_delta}."
     )
+
+
+def _fallback_target_balance_advice(target_plan: Dict, language: str = "en") -> str:
+    target = float(target_plan.get("target_balance", 0.0) or 0.0)
+    horizon_days = int(target_plan.get("horizon_days", 0) or 0)
+    gap = float(target_plan.get("target_gap", 0.0) or 0.0)
+    monthly_needed = float(target_plan.get("required_monthly_savings", 0.0) or 0.0)
+    recommendations = target_plan.get("recommended_cuts", []) or []
+
+    if gap <= 0:
+        if language == "hi":
+            return f"आप ${target:.0f} का लक्ष्य {horizon_days} दिनों में पहले से ट्रैक पर हैं। वर्तमान खर्च योजना बनाए रखें।"
+        if language == "hinglish":
+            return f"Aap ${target:.0f} target ke liye {horizon_days} days me already on track ho. Current spending discipline continue karo."
+        return (
+            f"You are already on track to reach ${target:.0f} in {horizon_days} days. "
+            "Keep your current spending pattern and maintain a small safety buffer."
+        )
+
+    top_lines = []
+    for item in recommendations[:3]:
+        category = str(item.get("category") or "general")
+        monthly_cut = float(item.get("recommended_cut_monthly", 0.0) or 0.0)
+        percent = float(item.get("cut_percent", 0.0) or 0.0)
+        top_lines.append((category, monthly_cut, percent))
+
+    if language == "hi":
+        if top_lines:
+            first = "\n".join(
+                [f"- {cat}: लगभग ${amt:.0f}/माह ({pct:.0f}% कटौती)" for cat, amt, pct in top_lines]
+            )
+            return (
+                f"${target:.0f} लक्ष्य तक पहुंचने के लिए आपको लगभग ${monthly_needed:.0f}/माह अतिरिक्त बचत चाहिए। "
+                f"अगले {horizon_days} दिनों के लिए ये कटौती करें:\n{first}"
+            )
+        return f"${target:.0f} लक्ष्य तक पहुंचने के लिए ${monthly_needed:.0f}/माह अतिरिक्त बचत की आवश्यकता है।"
+
+    if language == "hinglish":
+        if top_lines:
+            first = "\n".join(
+                [f"- {cat}: around ${amt:.0f}/month cut ({pct:.0f}% reduction)" for cat, amt, pct in top_lines]
+            )
+            return (
+                f"${target:.0f} target hit karne ke liye approx ${monthly_needed:.0f}/month extra save karna hoga. "
+                f"Agle {horizon_days} days ke liye yeh cuts try karo:\n{first}"
+            )
+        return f"${target:.0f} target ke liye ${monthly_needed:.0f}/month extra savings chahiye."
+
+    if top_lines:
+        first = "\n".join(
+            [f"- {cat}: cut about ${amt:.0f}/month ({pct:.0f}% reduction)" for cat, amt, pct in top_lines]
+        )
+        return (
+            f"To reach ${target:.0f} in {horizon_days} days, you need about ${monthly_needed:.0f} in extra monthly savings. "
+            f"Start with these cuts:\n{first}"
+        )
+
+    return (
+        f"To reach ${target:.0f} in {horizon_days} days, you need about ${monthly_needed:.0f} in extra monthly savings. "
+        "Your spending history is limited, so start with discretionary categories first."
+    )
+
+
+def generate_target_balance_advice(
+    target_plan: Dict,
+    language: str = "en",
+    transaction_context: Optional[Dict[str, Any]] = None,
+) -> str:
+    if not _client:
+        return _fallback_target_balance_advice(target_plan, language)
+
+    try:
+        prompt = (
+            "You are a practical personal finance coach. "
+            f"Respond in {_language_name(language)}. "
+            "Give concrete, short, prioritized spending-cut actions to hit the target balance. "
+            "Use exact numbers from target_plan; keep it under 120 words. "
+            "Mention top categories and monthly cut amounts. "
+            f"target_plan={json.dumps(target_plan, ensure_ascii=False)} "
+            f"transaction_context={json.dumps(transaction_context or {}, ensure_ascii=False)}"
+        )
+        response = _client.generate_content(
+            prompt,
+            generation_config=GenerationConfig(temperature=0.35),
+        )
+        content = _extract_text(response)
+        return content or _fallback_target_balance_advice(target_plan, language)
+    except Exception:
+        logger.exception("Target balance advice generation failed; using fallback")
+        return _fallback_target_balance_advice(target_plan, language)

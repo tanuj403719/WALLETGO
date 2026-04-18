@@ -6,6 +6,8 @@ const ForecastContext = createContext()
 export function ForecastProvider({ children }) {
   const [forecast, setForecast] = useState(null)
   const [scenarios, setScenarios] = useState([])
+  const [savedScenarios, setSavedScenarios] = useState([])
+  const [scenarioComparison, setScenarioComparison] = useState(null)
   const [ephemeralTransactions, setEphemeralTransactions] = useState([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState(null)
@@ -50,16 +52,70 @@ export function ForecastProvider({ children }) {
     }
   }, [ephemeralTransactions])
 
+  const loadSavedScenarios = useCallback(async (limit = 10) => {
+    setIsLoading(true)
+    setError(null)
+    try {
+      const response = await scenarioAPI.getSaved(limit)
+      const items = response.data?.items || []
+      setSavedScenarios(items)
+      return items
+    } catch (err) {
+      setError(err.message)
+      throw err
+    } finally {
+      setIsLoading(false)
+    }
+  }, [])
+
+  const saveScenario = useCallback(async (payload) => {
+    setIsLoading(true)
+    setError(null)
+    try {
+      const response = await scenarioAPI.save(payload)
+      const saved = response.data?.scenario
+      if (saved) {
+        setSavedScenarios((current) => [saved, ...current.filter((item) => item.id !== saved.id)])
+      }
+      return response.data
+    } catch (err) {
+      setError(err.message)
+      throw err
+    } finally {
+      setIsLoading(false)
+    }
+  }, [])
+
+  const compareSavedScenarios = useCallback(async (leftId, rightId) => {
+    setIsLoading(true)
+    setError(null)
+    try {
+      const response = await scenarioAPI.compare(leftId, rightId)
+      setScenarioComparison(response.data)
+      return response.data
+    } catch (err) {
+      setError(err.message)
+      throw err
+    } finally {
+      setIsLoading(false)
+    }
+  }, [])
+
   return (
     <ForecastContext.Provider
       value={{
         forecast,
         scenarios,
+        savedScenarios,
+        scenarioComparison,
         ephemeralTransactions,
         isLoading,
         error,
         generateForecast,
         runScenario,
+        loadSavedScenarios,
+        saveScenario,
+        compareSavedScenarios,
         setEphemeralTransactions: setDemoTransactions,
         clearEphemeralTransactions: clearDemoTransactions,
       }}

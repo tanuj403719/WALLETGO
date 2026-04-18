@@ -19,6 +19,7 @@ _project_root = Path(__file__).resolve().parent.parent.parent
 load_dotenv(_project_root / ".env")
 
 from routes.auth import router as auth_router
+from routes.scenarios import router as scenarios_router
 from routes.transactions import router as transactions_router
 from services.auth_service import SEED_TRANSACTIONS as DEMO_SEED_TRANSACTIONS, seed_demo_transactions
 from services.supabase_service import TRANSACTIONS_TABLE, assert_supabase_ready
@@ -46,6 +47,7 @@ app = FastAPI(
 
 app.include_router(auth_router)
 app.include_router(transactions_router)
+app.include_router(scenarios_router)
 
 
 @app.get("/health")
