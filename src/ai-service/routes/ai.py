@@ -9,12 +9,14 @@ from fastapi import APIRouter
 from schemas.requests import (
     ExplainForecastRequest,
     ExtractIntentRequest,
+    GoalCutsRequest,
     ScenarioExplanationRequest,
     TargetBalanceAdviceRequest,
 )
 from services.ai_service import (
     extract_scenario_intent,
     generate_explanation,
+    generate_goal_cuts,
     generate_scenario_explanation,
     generate_target_balance_advice,
 )
@@ -69,3 +71,15 @@ async def api_target_balance_advice(request: TargetBalanceAdviceRequest):
         request.transaction_context,
     )
     return {"advice": advice, "language": request.language}
+
+
+@router.post("/goal-cuts")
+async def api_goal_cuts(request: GoalCutsRequest):
+    cuts = generate_goal_cuts(
+        category_spending=request.category_spending,
+        required_monthly_savings=request.required_monthly_savings,
+        days_remaining=request.days_remaining,
+        language=request.language,
+        is_achievable=request.is_achievable,
+    )
+    return {"suggested_cuts": cuts, "language": request.language}

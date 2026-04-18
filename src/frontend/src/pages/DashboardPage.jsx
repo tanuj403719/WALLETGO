@@ -25,11 +25,13 @@ import {
   FiTarget,
   FiTrendingUp,
   FiShield,
+  FiFlag,
 } from 'react-icons/fi'
 import toast from 'react-hot-toast'
 import { useAuth } from '../context/AuthContext'
 import { useForecast } from '../context/ForecastContext'
 import StatementUploader from '../components/StatementUploader'
+import GoalForecaster from '../components/GoalForecaster'
 import { transactionAPI } from '../utils/api'
 
 const DEFAULT_FORECAST = [
@@ -52,6 +54,7 @@ const MENU_ITEMS = [
   { id: 'overview', path: '/dashboard', icon: FiGrid, label: 'Overview' },
   { id: 'forecast', path: '/dashboard/forecast', icon: FiActivity, label: 'Forecast' },
   { id: 'sandbox', path: '/dashboard/sandbox', icon: FiTarget, label: 'What-If Sandbox' },
+  { id: 'goal', path: '/dashboard/goal', icon: FiFlag, label: 'Goal Forecaster' },
 ]
 
 const SETTINGS_ITEM = { id: 'settings', path: '/dashboard/settings', icon: FiSettings, label: 'Settings' }
@@ -212,6 +215,7 @@ function getCurrentTab(pathname) {
   if (pathname === '/dashboard' || pathname === '/dashboard/') return 'overview'
   if (pathname.startsWith('/dashboard/forecast')) return 'forecast'
   if (pathname.startsWith('/dashboard/sandbox')) return 'sandbox'
+  if (pathname.startsWith('/dashboard/goal')) return 'goal'
   if (pathname.startsWith('/dashboard/settings')) return 'settings'
   return 'overview'
 }
@@ -377,6 +381,7 @@ export default function DashboardPage() {
     generateForecast,
     runScenario,
     clearEphemeralTransactions,
+    ephemeralTransactions,
     savedScenarios,
     scenarioComparison,
     loadSavedScenarios,
@@ -389,7 +394,9 @@ export default function DashboardPage() {
   const currentTab = getCurrentTab(location.pathname)
   const contentContainerClass = currentTab === 'forecast' || currentTab === 'settings'
     ? 'w-full max-w-[1600px] mx-auto p-4 md:p-8'
-    : 'max-w-7xl mx-auto p-4 md:p-8'
+    : currentTab === 'goal'
+      ? 'max-w-3xl mx-auto p-4 md:p-8'
+      : 'max-w-7xl mx-auto p-4 md:p-8'
   const liquidity = useMemo(
     () => computeLiquidityScore(forecastRows, alertBuffer),
     [forecastRows, alertBuffer]
@@ -1270,10 +1277,22 @@ export default function DashboardPage() {
     </div>
   )
 
+  const renderGoal = () => (
+    <motion.div
+      key="goal"
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3 }}
+    >
+      <GoalForecaster ephemeralTransactions={ephemeralTransactions} />
+    </motion.div>
+  )
+
   const contentByTab = {
     overview: renderOverview(),
     forecast: renderForecast(),
     sandbox: renderSandbox(),
+    goal: renderGoal(),
     settings: isAuthenticated ? renderSettings() : renderOverview(),
   }
 

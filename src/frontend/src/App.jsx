@@ -38,6 +38,7 @@ export default function App() {
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/dashboard/forecast" element={<DashboardPage />} />
             <Route path="/dashboard/sandbox" element={<DashboardPage />} />
+            <Route path="/dashboard/goal" element={<DashboardPage />} />
             <Route path="/dashboard/alerts" element={<Navigate to="/dashboard" replace />} />
             <Route
               path="/dashboard/settings"

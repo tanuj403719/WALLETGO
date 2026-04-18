@@ -19,6 +19,25 @@ except Exception:  # pragma: no cover
     genai = None
     GenerationConfig = None
 
+# Disable the SDK's built-in retry-on-429 behaviour.
+# google-generativeai >= 0.8 wraps every generate_content call with
+# google.api_core.retry, which silently retries ResourceExhausted (HTTP 429)
+# errors several times before surfacing the exception.  A single API call can
+# therefore fan out into 4–8 requests, instantly exhausting free-tier quotas.
+# Passing a no-op Retry object suppresses this and lets our own except-blocks
+# fall through to the deterministic fallback immediately.
+try:
+    from google.api_core import retry as _api_retry
+    from google.api_core.exceptions import ResourceExhausted as _ResourceExhausted
+    _GEMINI_REQUEST_OPTIONS: dict = {
+        "retry": _api_retry.Retry(predicate=_api_retry.if_exception_type()),
+    }
+    _HAS_GOOGLE_CORE = True
+except ImportError:  # pragma: no cover
+    _GEMINI_REQUEST_OPTIONS = {}
+    _ResourceExhausted = Exception  # type: ignore[misc,assignment]
+    _HAS_GOOGLE_CORE = False
+
 # Load .env from project root
 from pathlib import Path
 from dotenv import load_dotenv
@@ -107,9 +126,13 @@ def generate_explanation(forecast: Dict, language: str = "en") -> str:
         response = _client.generate_content(
             prompt,
             generation_config=GenerationConfig(temperature=0.4),
+            **_GEMINI_REQUEST_OPTIONS,
         )
         content = _extract_text(response)
         return content or _fallback_explanation(forecast, language)
+    except _ResourceExhausted:
+        logger.warning("Gemini 429 rate limit on explain; using fallback immediately")
+        return _fallback_explanation(forecast, language)
     except Exception:
         return _fallback_explanation(forecast, language)
 
@@ -176,6 +199,7 @@ def _extract_scenario_events_llm(
                 temperature=0,
                 response_mime_type="application/json",
             ),
+            **_GEMINI_REQUEST_OPTIONS,
         )
 
         content = _extract_text(response).strip()
@@ -193,6 +217,9 @@ def _extract_scenario_events_llm(
             "parser": "gemini",
             "model": _model_name,
         }
+    except _ResourceExhausted:
+        logger.warning("Gemini 429 rate limit on intent extraction; using fallback parser")
+        return None
     except Exception:
         logger.exception("LLM scenario extraction failed; using fallback parser")
         return None
@@ -460,10 +487,13 @@ def generate_scenario_explanation(
             response = _client.generate_content(
                 prompt,
                 generation_config=GenerationConfig(temperature=0.2),
+                **_GEMINI_REQUEST_OPTIONS,
             )
             content = _extract_text(response)
             if content:
                 return content
+        except _ResourceExhausted:
+            logger.warning("Gemini 429 rate limit on scenario explanation; using fallback")
         except Exception:
             logger.exception("LLM scenario explanation failed; using deterministic fallback")
 
@@ -545,6 +575,209 @@ def _fallback_target_balance_advice(target_plan: Dict, language: str = "en") -> 
     )
 
 
+_ESSENTIAL_CATEGORIES = frozenset({
+    "rent", "mortgage", "emi", "loan", "insurance", "utilities", "salary", "income",
+    "paycheck", "tax", "medical", "healthcare", "education",
+})
+
+
+def _is_essential(category: str) -> bool:
+    return category.lower().strip() in _ESSENTIAL_CATEGORIES
+
+
+def _fallback_goal_cuts(
+    category_spending: Dict[str, float],
+    required_monthly_savings: float,
+    is_achievable: bool = True,
+) -> List[Dict[str, Any]]:
+    # Hard cap: never exceed 50% per category regardless of achievability.
+    caps = {
+        "food": 0.35, "dining": 0.35, "shopping": 0.40, "entertainment": 0.50,
+        "subscriptions": 0.50, "travel": 0.40, "transport": 0.20, "general": 0.25,
+    }
+    discretionary = {
+        cat: spend for cat, spend in category_spending.items()
+        if not _is_essential(cat) and spend > 0
+    }
+    sorted_cats = sorted(discretionary.items(), key=lambda x: x[1], reverse=True)
+
+    cuts: List[Dict[str, Any]] = []
+    remaining = required_monthly_savings
+    for category, monthly_spend in sorted_cats:
+        if remaining <= 0 and is_achievable:
+            break
+        cap = min(0.50, caps.get(category.lower(), 0.25))
+        max_cut = monthly_spend * cap
+        proposed_cut = max_cut if not is_achievable else min(max_cut, remaining)
+        if proposed_cut < 1.0:
+            continue
+        cut_pct = round((proposed_cut / monthly_spend) * 100, 1)
+        action = f"Reduce {category} spending by {cut_pct:.0f}% (save ${proposed_cut:.0f}/month)"
+        if not is_achievable:
+            action += ". Note: the savings target exceeds what discretionary cuts alone can cover — consider extending your target date or finding additional income."
+        cuts.append({
+            "category": category,
+            "current_monthly_spend": round(monthly_spend, 2),
+            "recommended_monthly_spend": round(monthly_spend - proposed_cut, 2),
+            "monthly_savings": round(proposed_cut, 2),
+            "cut_percentage": cut_pct,
+            "strategy_type": "trim",
+            "action": action,
+        })
+        remaining = round(max(0.0, remaining - proposed_cut), 2)
+
+    return cuts[:5]
+
+
+_LANGUAGE_ACTION_DIRECTIVE = {
+    "en": "English",
+    "hi": "Hindi written in Devanagari script",
+    "hinglish": "Hinglish (a conversational blend of Hindi and English written in the Latin alphabet)",
+}
+
+
+_DEFAULT_SPENDING_SHARES = {
+    "food & dining": 0.35,
+    "shopping": 0.25,
+    "entertainment": 0.15,
+    "subscriptions": 0.10,
+    "transport": 0.15,
+}
+
+
+def _synthesize_spending(required_monthly_savings: float) -> Dict[str, float]:
+    """
+    When no real category data is available (demo / no transactions uploaded),
+    estimate discretionary spending from typical household proportions.
+    Assumes the savings target represents ~50 % of discretionary spend.
+    """
+    estimated_total = max(required_monthly_savings * 2.0, 500.0)
+    return {
+        cat: round(estimated_total * share, 2)
+        for cat, share in _DEFAULT_SPENDING_SHARES.items()
+    }
+
+
+def generate_goal_cuts(
+    category_spending: Dict[str, float],
+    required_monthly_savings: float,
+    days_remaining: int,
+    language: str = "en",
+    is_achievable: bool = True,
+) -> List[Dict[str, Any]]:
+    if not _client:
+        spending = category_spending or _synthesize_spending(required_monthly_savings)
+        return _fallback_goal_cuts(spending, required_monthly_savings, is_achievable)
+
+    discretionary = {
+        cat: spend for cat, spend in category_spending.items()
+        if not _is_essential(cat) and spend > 0
+    }
+    if not discretionary:
+        discretionary = _synthesize_spending(required_monthly_savings)
+
+    if is_achievable:
+        rule_4 = "4. The sum of monthly_savings across all items must reach required_monthly_savings.\n"
+    else:
+        rule_4 = (
+            "4. The goal is mathematically impossible without cutting essential expenses. "
+            "Suggest maximum realistic cuts (max 50% per discretionary category). "
+            "In the 'action' field, acknowledge the gap and gently suggest extending the target date "
+            "or finding additional income. Do not attempt to force the math to reach required_monthly_savings.\n"
+        )
+
+    action_language = _LANGUAGE_ACTION_DIRECTIVE.get(language, "English")
+    language_directive = (
+        f"\nLANGUAGE REQUIREMENT: Ensure all 'action' strings are written in natural, "
+        f"conversational {action_language}.\n"
+    )
+
+    system_prompt = (
+        "You are a strict personal finance advisor. "
+        "Analyze monthly spending by category and recommend specific cuts to reach a savings goal. "
+        "\n\nRules:\n"
+        "1. ONLY cut discretionary categories (food, dining, entertainment, shopping, subscriptions, travel, etc.).\n"
+        "2. NEVER cut essential expenses (rent, emi, loan, insurance, utilities, salary, income, medical, education).\n"
+        "3. Each cut must be realistic: max 50% of current spend for pure discretionary, max 20% for semi-essential.\n"
+        + rule_4
+        + "5. Sort output by monthly_savings descending (highest impact first).\n"
+        "6. Limit to 5 recommendations maximum.\n"
+        "7. Return ONLY a JSON array — no markdown, no explanation, no wrapper object.\n"
+        + language_directive
+        + "8. You MUST categorize each recommendation using the 'strategy_type' field. "
+        "Choose strictly from:\n"
+        "   - 'pause': Complete temporary elimination of an expense (e.g. subscriptions, memberships). Set recommended_monthly_spend to 0.\n"
+        "   - 'trim': A realistic percentage reduction in a variable category (e.g. dining, shopping).\n"
+        "   - 'swap': Suggesting a cheaper alternative for an existing habit (e.g. making coffee at home instead of buying it). Include the swap logic in the 'action' string.\n"
+        "   The 'action' string must perfectly align with the chosen strategy_type.\n"
+        + "\nEach item schema:\n"
+        '{"category": string, "current_monthly_spend": number, "recommended_monthly_spend": number, '
+        '"monthly_savings": number, "cut_percentage": number, "strategy_type": string, "action": string}\n'
+        '"action" must be a concrete, specific behaviour change aligned to strategy_type '
+        '(e.g. trim: "Limit dining out to twice a week"; swap: "Brew coffee at home — cancel café habit"; pause: "Pause Netflix subscription for 2 months").'
+    )
+
+    try:
+        data_source = "actual" if any(
+            not _is_essential(k) for k in (category_spending or {})
+        ) else "estimated_typical_proportions"
+        payload = {
+            "discretionary_monthly_spending": discretionary,
+            "required_monthly_savings": round(required_monthly_savings, 2),
+            "days_remaining": days_remaining,
+            "is_achievable": is_achievable,
+            "spending_data_source": data_source,
+        }
+        prompt = f"{system_prompt}\n\nInput: {json.dumps(payload, ensure_ascii=False)}"
+        response = _client.generate_content(
+            prompt,
+            generation_config=GenerationConfig(
+                temperature=0,
+                response_mime_type="application/json",
+            ),
+            **_GEMINI_REQUEST_OPTIONS,
+        )
+        content = _extract_text(response).strip()
+        if content.startswith("```"):
+            content = re.sub(r"^```(?:json)?\s*", "", content)
+            content = re.sub(r"\s*```$", "", content)
+
+        parsed = json.loads(content)
+        if isinstance(parsed, dict):
+            parsed = parsed.get("cuts") or parsed.get("recommendations") or list(parsed.values())[0]
+        if not isinstance(parsed, list):
+            raise ValueError("Expected JSON array from Gemini")
+
+        _valid_strategies = {"pause", "trim", "swap"}
+        sanitized: List[Dict[str, Any]] = []
+        for item in parsed:
+            if not isinstance(item, dict):
+                continue
+            try:
+                raw_strategy = str(item.get("strategy_type") or "trim").strip().lower()
+                strategy_type = raw_strategy if raw_strategy in _valid_strategies else "trim"
+                sanitized.append({
+                    "category": str(item.get("category", "general")),
+                    "current_monthly_spend": round(float(item.get("current_monthly_spend", 0)), 2),
+                    "recommended_monthly_spend": round(float(item.get("recommended_monthly_spend", 0)), 2),
+                    "monthly_savings": round(float(item.get("monthly_savings", 0)), 2),
+                    "cut_percentage": round(float(item.get("cut_percentage", 0)), 1),
+                    "strategy_type": strategy_type,
+                    "action": str(item.get("action", "")),
+                })
+            except (TypeError, ValueError):
+                continue
+
+        return sanitized[:5] if sanitized else _fallback_goal_cuts(category_spending, required_monthly_savings, is_achievable)
+
+    except _ResourceExhausted:
+        logger.warning("Gemini 429 rate limit on goal cuts; falling back immediately — no retry")
+        return _fallback_goal_cuts(category_spending, required_monthly_savings, is_achievable)
+    except Exception:
+        logger.exception("Goal cuts generation failed; using fallback")
+        return _fallback_goal_cuts(category_spending, required_monthly_savings, is_achievable)
+
+
 def generate_target_balance_advice(
     target_plan: Dict,
     language: str = "en",
@@ -566,9 +799,13 @@ def generate_target_balance_advice(
         response = _client.generate_content(
             prompt,
             generation_config=GenerationConfig(temperature=0.35),
+            **_GEMINI_REQUEST_OPTIONS,
         )
         content = _extract_text(response)
         return content or _fallback_target_balance_advice(target_plan, language)
+    except _ResourceExhausted:
+        logger.warning("Gemini 429 rate limit on target balance advice; using fallback immediately")
+        return _fallback_target_balance_advice(target_plan, language)
     except Exception:
         logger.exception("Target balance advice generation failed; using fallback")
         return _fallback_target_balance_advice(target_plan, language)

@@ -27,6 +27,13 @@ export const forecastAPI = {
     }),
   getCurrent: () => api.get('/api/forecast/current'),
   getHistory: (limit = 10) => api.get(`/api/forecast/history?limit=${limit}`),
+  goal: (targetAmount, targetDate, language = 'en', ephemeralTransactions = null) =>
+    api.post('/api/forecast/goal', {
+      target_amount: targetAmount,
+      target_date: targetDate,
+      language,
+      ...(ephemeralTransactions?.length ? { ephemeral_transactions: ephemeralTransactions } : {}),
+    }),
 }
 
 // Scenario API

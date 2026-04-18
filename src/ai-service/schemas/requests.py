@@ -30,3 +30,11 @@ class TargetBalanceAdviceRequest(BaseModel):
     target_plan: Dict
     language: str = "en"
     transaction_context: Optional[Dict] = None
+
+
+class GoalCutsRequest(BaseModel):
+    category_spending: Dict[str, float]
+    required_monthly_savings: float
+    days_remaining: int
+    language: str = "en"
+    is_achievable: bool = True
